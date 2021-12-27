@@ -5,3 +5,4 @@ resources/GPL.txt
 resources/ItemDB.txt
 resources/readme.chm
 MacroQuest.exe
+MeshUpdater.exe
