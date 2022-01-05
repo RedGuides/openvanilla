@@ -444,6 +444,7 @@ MQLIB_API const char* GetLDoNTheme(int LDTheme);
 MQLIB_API bool TriggeringEffectSpell(SPELL* aSpell, int i);
 MQLIB_API bool BuffStackTest(SPELL* aSpell, SPELL* bSpell, bool bIgnoreTriggeringEffects = false, bool bTriggeredEffectCheck = false);
 MQLIB_API bool WillStackWith(const EQ_Spell* testSpell, const EQ_Spell* existingSpell);
+MQLIB_API bool IsSpellTooPowerful(PlayerClient* caster, PlayerClient* target, EQ_Spell* spell);
 MQLIB_API uint32_t GetItemTimer(ItemClient* pItem);
 MQLIB_API ItemClient* GetItemContentsByName(const char* ItemName);
 MQLIB_API DWORD GetAvailableSlots(ItemClient* pContainer, ItemClient* pItem, int *firstavailableslot);
@@ -746,6 +747,8 @@ MQLIB_OBJECT const char* GetSpellCaster(const CachedBuff& buff);
 MQLIB_API    const char* GetPetSpellCaster(const EQ_Affect& buff);
 MQLIB_API    eEQSPELLCAT GetSpellCategoryFromName(const char* category);
 MQLIB_API    eEQSPA      GetSPAFromName(const char* spa);
+
+MQLIB_API    const char* GetTeleportName(DWORD id);
 
 MQLIB_API HMODULE GetCurrentModule();
 MQLIB_API DWORD CALLBACK MQ2End(void* lpParameter);

@@ -1341,6 +1341,8 @@ int GetCurrencyIDByName(char* szName)
 	if (!_stricmp(szName, "Overseer Tetradrachm")) return ALTCURRENCY_OVERSEERTETRADRACHM;
 	if (!_stricmp(szName, "Restless Mark")) return ALTCURRENCY_RESTLESSMARK;
 	if (!_stricmp(szName, "Warforged Emblem")) return ALTCURRENCY_WARFORGEDEMBLEM;
+	if (!_stricmp(szName, "Scarlet Marks")) return ALTCURRENCY_SCARLETMARKS;
+	if (!_stricmp(szName, "Medals of Conflict")) return ALTCURRENCY_MEDALSOFCONFLICT;
 	return -1;
 }
 
@@ -4865,6 +4867,41 @@ bool WillStackWith(const EQ_Spell* testSpell, const EQ_Spell* existingSpell)
 	return ret && SlotIndex != -1;
 }
 
+bool IsSpellTooPowerful(PlayerClient* caster, PlayerClient* target, EQ_Spell* spell)
+{
+	if (!caster || !target || !spell)
+		return true;
+
+	if (caster->Type > 0 && !caster->Mercenary)
+		return false;
+
+	if (caster == target)
+		return false;
+
+	if (spell->TargetType == TargetType_Self || spell->SpellType == SpellType_Detrimental || spell->DurationType == 0)
+		return false;
+
+	uint8_t spellLevel = spell->GetSpellLevelNeeded(caster->GetClass());
+	if (spellLevel == 0 || spellLevel > MAX_PC_LEVEL)
+		return false;
+
+	uint8_t targetLevel = target->GetLevel();
+	if (target->Type == 1 && target->MasterID != 0)
+	{
+		auto master = GetSpawnByID(target->MasterID);
+		if (master)
+			targetLevel = master->GetLevel();
+	}
+
+	if (spellLevel > 65 && targetLevel < 61)
+		return true;
+
+	if (spellLevel > 50 && targetLevel < floor(spellLevel / 2) + 15)
+		return true;
+
+	return false;
+}
+
 float GetMeleeRange(PlayerClient* pSpawn1, PlayerClient* pSpawn2)
 {
 	if (pSpawn1 && pSpawn2)
@@ -6329,7 +6366,11 @@ int GetCharMaxLevel()
 {
 	int MaxLevel = 50;
 
-	if (HasExpansion(EXPANSION_COV) || HasExpansion(EXPANSION_TOV))
+	if (HasExpansion(EXPANSION_TOL))
+	{
+		MaxLevel = 120;
+	}
+	else if (HasExpansion(EXPANSION_COV) || HasExpansion(EXPANSION_TOV))
 	{
 		MaxLevel = 115;
 	}
@@ -7387,6 +7428,21 @@ bool GetFilteredModules(HANDLE hProcess, HMODULE* hModule, DWORD cb, DWORD* lpcb
 	}
 
 	return result;
+}
+
+const char* GetTeleportName(DWORD id)
+{
+	DWORD TableSize = *(DWORD*)Teleport_Table_Size;
+	tp_coords* tp = (tp_coords*)Teleport_Table;
+
+	if (id < TableSize)
+	{
+		DWORD zoneId = tp[id].ZoneId & 0x7fff;
+
+		return GetShortZone(zoneId);
+	}
+
+	return "UNKNOWN";
 }
 
 } // namespace mq

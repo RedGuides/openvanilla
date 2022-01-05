@@ -183,7 +183,6 @@
 [submodule "plugins/MQ2Nav"]
 	path = plugins/MQ2Nav
 	url = https://github.com/brainiac/MQ2Nav.git
-	branch = mqnext
 [submodule "plugins/MQ2NetBots"]
 	path = plugins/MQ2NetBots
 	url = https://gitlab.com/redguides/plugins/MQ2NetBots.git
