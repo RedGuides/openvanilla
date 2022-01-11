@@ -1,8 +1,8 @@
 # Open Vanilla
 
-Open Vanilla is a compilation of multi-boxing software for EverQuest. It's based on [MacroQuest](https://gitlab.com/macroquest/), with plugins and extras from the [RedGuides community](https://www.redguides.com). 
-### Not a gnome?
-A supported version, [Very Vanilla🍦](https://www.redguides.com/community/resources/redguides-launcher.1255/) is available for contributors and subscribers. If you want to tinker, read on!
+Open Vanilla is a compilation of multi-boxing software for EverQuest. It's based on [MacroQuest](https://gitlab.com/macroquest/), with plugins and ❤️ from the [RedGuides community](https://www.redguides.com). 
+### Not a gnome? ⚙️
+The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com/community/resources/redguides-launcher.1255/) is available for contributors and subscribers. If you'd rather tinker, read on!
 
 ---
 ## Build
