@@ -1,42 +1,42 @@
-# MacroQuest
+# Open Vanilla
+
+Open Vanilla is a compilation of multi-boxing software for EverQuest. It's based on [MacroQuest](https://gitlab.com/macroquest/), with plugins and extras from the [RedGuides community](https://www.redguides.com). 
+### Not a gnome?
+A supported version, [Very Vanilla🍦](https://www.redguides.com/community/resources/redguides-launcher.1255/) is available for contributors and subscribers. If you want to tinker, read on!
+
 ---
+## Build
 
-MacroQuest is an open source scripting and plugin platform for EverQuest.
-
-## How To Build
-
-### Prererequisites
+### Prerequisites
 
 * [Visual Studio 2019 Community](https://visualstudio.microsoft.com/downloads/)
 * [Git for Windows](https://git-scm.com/)
 
-The recommended way to build MacroQuest is from a source code checkout using Git. There are many how to guides for installing and setting up git. [Here is one of them](https://docs.gitlab.com/ee/gitlab-basics/start-using-git.html)
+### Prepare for build
 
-### Check out the latest source code
-
-Create the checkout. **ACTUAL URL TBD**
+1) Clone the repository with this line, (newest version of Git required)
 
 ```
-git clone git@gitlab.com:macroquest/next/mqnext.git
+git clone --recurse-submodules -j8 https://gitlab.com/redguides/openvanilla.git
 ```
 
-Make sure that submodules are initialized. If you have run this step already, you can skip it
-```
-git submodule init
-```
+2) Run `MQ2Auth.exe` to generate the authorization file for your computer. Personal builds are machine-locked; they can only be run on the machine that built them. 
 
-Update the submodules to the correct version
-```
-git submodule update
-```
+### Build Steps
 
-Run `MQ2Auth.exe` to generate the authorization file for your computer. Personal builds of MacroQuest are machine-locked, and can only be run on the machine the built it.
+1. Open the `OpenVanilla.sln` file in /src
+1. Select the `Release` configuration from the drop-down menu near the top of the window
+1. Select `Build -> Build Solution` from the menu.
+
+The built files will be placed in `build/bin/Release`. To start MacroQuest, run `MacroQuest.exe`. This will launch the application to the tray, and inject MacroQuest into any running EverQuest processes. 
+
+You're ready to play! If you're new to multi-boxing, watch our [video series](https://www.redguides.com/community/resources/multiboxing-everquest-the-red-guide-videos.1603/).
 
 ### Updating an existing checkout
 
-MacroQuest is updated often, especially after a patch. Make sure before you build that you have the latest source code for MacroQuest and all of its dependencies.
+Updates are frequent, and are required after an EverQuest patch. Before you build, grab the latest source code.
 
-If you already have the source, it is a good idea to make sure that you pull all the latest changes.
+If you already have the source, it's a good idea to make sure that you pull all the latest changes.
 ```
 git pull --rebase
 ```
@@ -45,16 +45,7 @@ Update submodules. This ensures that dependencies have the latest code.
 ```
 git submodule update
 ```
-
-At this point, the source should be ready to compile. Proceed to building.
-
-### Build Steps
-
-1. Open the `MacroQuest.sln` file in src
-1. Select the `Release` configuration from the drop-down menu near the top of the window
-1. Select `Build -> Build Solution` from the menu.
-
-The built files will be placed in `build/bin/Release`. To start MacroQuest, run `MacroQuest.exe`. This will launch the application to the tray, and install MacroQuest into any running EverQuest processes.
+You're now ready to follow the build steps again.
 
 ### Adding Your Own Plugins
 
@@ -65,18 +56,6 @@ To add any personal plugins to the solution:
 1. Right clicking the solution in solution explorer and clicking `Add -> Add Existing Project...`.
 1. Select your .vcxproj file.
 1. Repeat as necessary
-
-### Updating Plugins from Legacy MacroQuest
-
-If you are converting plugins over from Legacy MacroQuest, it is recommended that you re-run the plugin generator first, and copy your source files into the generated project.
-
-For Example:
-```
-cd plugins
-mkplugin MQ2Foo
-```
-
-This will generate a MQ2Foo.vcxproj, MQ2Foo.cpp and several other files in a MQ2Foo folder. You can now add this project to the solution and add/replace the sources with your own.
 
 ## Directory Structure
 
@@ -97,5 +76,3 @@ tools       | Source code and additional tools that are used for MacroQuest deve
 **MQ2Auth.exe** Generates MQ2Auth.h, run this first before building the solution
 
 **plugins/mkplugin.exe** Generates a new plugin from the template. Use this when creating a new plugin, or when converting an existing plugin from legacy MacroQuest.
-
-**src/MacroQuest.sln** The main MacroQuest solution file. Use this to build the project.
