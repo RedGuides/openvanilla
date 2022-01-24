@@ -299,7 +299,3 @@
 	path = plugins/MQ2XPTracker
 	url = https://gitlab.com/redguides/plugins/MQ2XPTracker.git
 	branch = mqnext
-[submodule "plugins/MQ2Collectible"]
-	path = plugins/MQ2Collectible
-	url = https://gitlab.com/redguides/plugins/mq2collectible.git
-	branch = main
