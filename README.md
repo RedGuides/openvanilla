@@ -26,6 +26,7 @@ git clone --recurse-submodules -j8 https://gitlab.com/redguides/openvanilla.git
 
 1. Open the `OpenVanilla.sln` file in /src
 1. Select the `Release` configuration from the drop-down menu near the top of the window
+1. Select the `x64` configuration from the nearby drop-down
 1. Select `Build -> Build Solution` from the menu.
 
 The built files will be placed in `build/bin/Release`. To start MacroQuest, run `MacroQuest.exe`. This will launch the application to the tray, and inject MacroQuest into any running EverQuest processes. 
