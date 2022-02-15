@@ -110,6 +110,9 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CollectionLib", "..\plugins
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MQ2DanNet", "..\plugins\MQ2Dan\MQ2DanNet\MQ2DanNet.vcxproj", "{739B2A7A-677B-47DB-8A49-C66A89FF6921}"
+	ProjectSection(ProjectDependencies) = postProject
+		{2A0A06A4-E9C6-4229-82EE-BD2D4E0A7221} = {2A0A06A4-E9C6-4229-82EE-BD2D4E0A7221}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MQ2AASpend", "..\plugins\MQ2AASpend\MQ2AASpend.vcxproj", "{771E0E01-4A68-0250-EA95-42214F8D41E9}"
 	ProjectSection(ProjectDependencies) = postProject
