@@ -16,11 +16,19 @@ The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com
 
 1) Clone the repository with this line, (newest version of Git required)
 
-```
-git clone --recurse-submodules -j8 https://gitlab.com/redguides/openvanilla.git
-```
+> ```git clone --recurse-submodules -j8 https://gitlab.com/redguides/openvanilla.git```
 
 2) Run `MQ2Auth.exe` to generate the authorization file for your computer. Personal builds are machine-locked; they can only be run on the machine that built them. 
+
+ <details>
+   <summary>Alternate: Test Server</summary>
+
+1) Clone the repository with this line, (newest version of Git required)
+> ```git clone --recurse-submodules -j8 -b testserver https://gitlab.com/redguides/openvanilla.git```
+
+2) Run `MQ2Auth.exe` to generate the authorization file for your computer. Personal builds are machine-locked; they can only be run on the machine that built them. 
+</details>
+&nbsp;
 
 ### Build Steps
 
@@ -38,14 +46,11 @@ You're ready to play! If you're new to multi-boxing, watch our [video series](ht
 Updates are frequent, and are required after an EverQuest patch. Before you build, grab the latest source code.
 
 If you already have the source, it's a good idea to make sure that you pull all the latest changes.
-```
-git pull --rebase
-```
+>```git pull --rebase```
 
 Update submodules. This ensures that dependencies have the latest code.
-```
-git submodule update
-```
+>```git submodule update```
+
 You're now ready to follow the build steps again.
 
 ### Adding Your Own Plugins
