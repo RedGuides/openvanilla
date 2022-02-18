@@ -126,7 +126,6 @@
 [submodule "plugins/MQ2LootManager"]
 	path = plugins/MQ2LootManager
 	url = https://github.com/jessebevil/MQ2LootManager.git
-	branch = MQNext
 [submodule "plugins/MQ2Medley"]
 	path = plugins/MQ2Medley
 	url = https://gitlab.com/redguides/plugins/MQ2Medley.git
@@ -230,3 +229,6 @@
 	path = plugins/MQ2Collectible
 	url = https://gitlab.com/redguides/plugins/mq2collectible.git
 	branch = main
+[submodule "plugins/MQ2ToolTip"]
+	path = plugins/MQ2ToolTip
+	url = https://gitlab.com/redguides/plugins/MQ2ToolTip.git
