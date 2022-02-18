@@ -232,4 +232,3 @@
 [submodule "plugins/MQ2ToolTip"]
 	path = plugins/MQ2ToolTip
 	url = https://gitlab.com/redguides/plugins/MQ2ToolTip.git
-	branch = mqnext
