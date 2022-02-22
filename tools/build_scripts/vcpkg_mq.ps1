@@ -31,6 +31,7 @@ Param (
 $vcpkg_root = "$MQRoot\contrib\vcpkg"
 $vcpkg_triplet = "$Platform-windows-static"
 $vcpkg_mq_file = "vcpkg_mq.txt"
+$vcpkg_mq_file_platform = "vcpkg_mq_$Platform.txt"
 
 $vcpkg_last_bootstrap_file = "vcpkg_mq_last_bootstrap-$Platform.txt"
 
@@ -65,7 +66,7 @@ function Wait-Process {
     )
 
     while ($Timeout -gt 0 -And @(Get-CimInstance Win32_Process -Filter "name = '$Name'" | Where-Object {$_.CommandLine -like $Filter}).Count -gt 0) {
-        Write-Host "$ProjectName waiting for another $Name process to complete" #timeout in $Timeout seconds..."
+        Write-Host "$ProjectName waiting for another $Name process to complete..." #, timeout in $Timeout seconds..."
         #$Timeout -= $SleepInterval
         Start-Sleep $SleepInterval
     }
@@ -75,8 +76,15 @@ function Wait-Process {
     }
 }
 
-# If there is not a vcpkg_mq_file, then no reason to continue
-if (-Not (Test-Path -Path "$ProjectDirectory\$vcpkg_mq_file")) {
+function RunPreCheck {
+    $PrecheckScript = "$PSScriptRoot\MQ2Main_PreBuild.ps1"
+    if (Test-Path $PrecheckScript -PathType Leaf) {
+        & $PrecheckScript
+    }
+}
+
+# If there is not a vcpkg_mq_file and vcpkg_mq_file_platform, then no reason to continue
+if (-Not (Test-Path -Path "$ProjectDirectory\$vcpkg_mq_file") -And -Not (Test-Path -Path "$ProjectDirectory\$vcpkg_mq_file_platform")) {
     exit 0
 }
 
@@ -89,7 +97,9 @@ if (-Not (Test-Path -Path "$vcpkg_root" -PathType Container))
 $startingDirectory = Get-Location
 Set-Location $vcpkg_root
 
-$vcpkg_file_list = Get-ChildItem -Path "$ProjectDirectory\$vcpkg_mq_file"
+$vcpkg_file_list = @()
+$vcpkg_file_list = @(Get-ChildItem -Path "$ProjectDirectory\$vcpkg_mq_file" -ErrorAction SilentlyContinue)
+$vcpkg_file_list += @(Get-ChildItem -Path "$ProjectDirectory\$vcpkg_mq_file_platform" -ErrorAction SilentlyContinue)
 
 $gitAvailable = $true
 try
@@ -117,6 +127,12 @@ if ($ProcessList.Count -gt 1) {
 # For simultaneous runs, if bootstrap is currently running, wait until it finishes
 Wait-Process -Name "powershell.exe" -Filter "*scripts\bootstrap.ps1*"
 
+if (Test-Path env:VCPKG_ROOT)
+{
+    Write-Warning "VCPKG_ROOT environment variable is set which means another installation of vcpkg is trying to override this one.  Temporarily resolving this issue, but there may be other issues with global vcpkg config."
+    $env:VCPKG_ROOT = $vcpkg_root
+}
+
 # Only bootstrap if we have no vcpkg or an old vcpkg
 $performBootstrap = $false
 if (-Not (Test-Path "./vcpkg.exe")) {
@@ -130,6 +146,7 @@ elseif ($gitAvailable) {
 }
 
 if ($performBootstrap) {
+    RunPreCheck
     & "./bootstrap-vcpkg.bat"
     if ($gitAvailable -AND $LASTEXITCODE -eq 0) {
         $currentCommit | Out-File "./$vcpkg_last_bootstrap_file" -NoNewline
@@ -158,7 +175,10 @@ if (-Not $vcpkg_drive_fixed) {
 
 if ($performBootstrap) {
     Write-Host "Searching for all $vcpkg_mq_file files..."
-    $vcpkg_file_list = Get-ChildItem -Directory -Path $MQRoot -Exclude .git,.vs,build,contrib,data,docs,extras,include | Get-ChildItem -Recurse -Filter $vcpkg_mq_file
+    $folderList = Get-ChildItem -Directory -Path $MQRoot -Exclude .git,.vs,build,contrib,data,docs,extras,include
+    $vcpkg_file_list = @($folderList | Get-ChildItem -Recurse -Filter $vcpkg_mq_file)
+    $vcpkg_file_list += @($folderList | Get-ChildItem -Recurse -Filter $vcpkg_mq_file_platform)
+
     Write-Host "Search complete"
 }
 
@@ -200,7 +220,7 @@ if ($performBootstrap -And $vcpkgTable.Count -ne 0) {
 $vcpkgInstallTable = @{}
 foreach ($file in $vcpkg_file_list) {
     Write-Host "$ProjectName checking vcpkgs from $($file.FullName)"
-    $fileContents = Get-Content -Path $file.FullName
+    $fileContents = Get-Content -Path "$($file.FullName)"
     foreach ($line in $fileContents) {
         $line = $line.Trim()
         # Hash is a comment
@@ -248,6 +268,7 @@ foreach ($file in $vcpkg_file_list) {
 }
 
 if ($vcpkgInstallTable.Count -ne 0) {
+    RunPreCheck
     $vcpkg_command = "install --x-wait-for-lock"
     foreach ($triplet in $vcpkgInstallTable.GetEnumerator()) {
         if ($triplet.Value.Count -ne 0) {
