@@ -240,24 +240,37 @@ foreach ($file in $vcpkg_file_list) {
                 }
             }
 
-            #TODO: This logic got convoluted.  Clean it up.
-            if (-Not $vcpkgTable.ContainsKey($packageTriplet) -Or (-Not $vcpkgTable[$packageTriplet].ContainsKey($packageName) -And (-Not $vcpkgInstallTable.ContainsKey($packageTriplet) -Or -Not $vcpkgInstallTable[$packageTriplet].ContainsKey($packageName)))) {
+            # If either the triplet or the package is not installed
+            if (-Not $vcpkgTable.ContainsKey($packageTriplet) -Or (-Not $vcpkgTable[$packageTriplet].ContainsKey($packageName))) {
+                # If we don't have the triplet set to be installed already
                 if (-Not $vcpkgInstallTable.ContainsKey($packageTriplet)) {
                     $vcpkgInstallTable.Add($packageTriplet,@{})
                 }
-                $vcpkgInstallTable[$packageTriplet][$packageName] = New-Object System.Collections.Generic.List[System.Object]
+                # If we don't have the package set to be installed already
+                if (-Not $vcpkgInstallTable[$packageTriplet].ContainsKey($packageName)) {
+                    $vcpkgInstallTable[$packageTriplet][$packageName] = New-Object System.Collections.Generic.List[System.Object]
+                }
             }
 
             foreach ($feature in $packageFeatures) {
+                # If this package isn't installed at all just add the feature
                 if (-Not $vcpkgTable.ContainsKey($packageTriplet) -Or -Not $vcpkgTable[$packageTriplet].ContainsKey($packageName)) {
-                    $vcpkgInstallTable[$packageTriplet][$packageName].Add("$feature")
+                    # If the feature isn't already set to be installed (this catches where core is specified as the only feature, assuming another package doesn't override that in a bulk install)
+                    if (-Not ($vcpkgInstallTable[$packageTriplet][$packageName] -Contains $feature))
+                    {
+                        $vcpkgInstallTable[$packageTriplet][$packageName].Add("$feature")
+                    }
                 } else {
                     # core would not show up in a feature list and the package is already installed so only add additional features that aren't core
-                    if ("core" -ne $feature -And -Not $vcpkgTable[$packageTriplet][$packageName] -Contains $feature) {
+                    # here we also handle ADDING features when a package is already installed with a different featureset
+                    if ("core" -ne $feature -And -Not ($vcpkgTable[$packageTriplet][$packageName] -Contains $feature)) {
+                        if (-Not $vcpkgInstallTable.ContainsKey($packageTriplet)) {
+                            $vcpkgInstallTable.Add($packageTriplet,@{})
+                        }
                         if (-Not $vcpkgInstallTable[$packageTriplet].ContainsKey($packageName)) {
                             $vcpkgInstallTable[$packageTriplet][$packageName] = New-Object System.Collections.Generic.List[System.Object]
                         }
-                        if (-Not $vcpkgInstallTable[$packageTriplet][$packageName] -Contains $feature) {
+                        if (-Not ($vcpkgInstallTable[$packageTriplet][$packageName] -Contains $feature)) {
                             $vcpkgInstallTable[$packageTriplet][$packageName].Add("$feature")
                         }
                     }
@@ -273,15 +286,17 @@ if ($vcpkgInstallTable.Count -ne 0) {
     foreach ($triplet in $vcpkgInstallTable.GetEnumerator()) {
         if ($triplet.Value.Count -ne 0) {
             foreach ($node in $triplet.Value.GetEnumerator()) {
-                $vcpkg_command += " $($node.Name)"
                 if ($node.Value.Count -ne 0) {
-                    $vcpkg_command += "["
+                    # Force recursion to install new features
+                    $vcpkg_command += " --recurse $($node.Name)["
                     foreach ($feature in $node.Value) {
                         $vcpkg_command += "$feature,"
                     }
                     # Strip the trailing comma
                     $vcpkg_command = $vcpkg_command.Substring(0,$vcpkg_command.Length-1)
                     $vcpkg_command += "]"
+                } else {
+                    $vcpkg_command += " $($node.Name)"
                 }
                 $vcpkg_command += ":$($triplet.Name)"
             }
