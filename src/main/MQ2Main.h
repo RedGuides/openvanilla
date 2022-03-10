@@ -433,13 +433,13 @@ MQLIB_API char* ShowSpellSlotInfo(EQ_Spell* pSpell, char* szBuffer, size_t Buffe
 MQLIB_API char* ParseSpellEffect(EQ_Spell* pSpell, int i, char* szBuffer, size_t BufferSize, int level = 100);
 
 MQLIB_API int GetSpellAttrib(EQ_Spell* pSpell, int index);
-MQLIB_API int GetSpellBase(EQ_Spell* pSpell, int index);
-MQLIB_API int GetSpellBase2(EQ_Spell* pSpell, int index);
-MQLIB_API int GetSpellMax(EQ_Spell* pSpell, int index);
+MQLIB_API int64_t GetSpellBase(EQ_Spell* pSpell, int index);
+MQLIB_API int64_t GetSpellBase2(EQ_Spell* pSpell, int index);
+MQLIB_API int64_t GetSpellMax(EQ_Spell* pSpell, int index);
 MQLIB_API int GetSpellCalc(EQ_Spell* pSpell, int index);
 
 MQLIB_API void SlotValueCalculate(char* szBuff, EQ_Spell* pSpell, int i, double mp = 1.0);
-MQLIB_API int CalcValue(int calc, int base, int max, int tick, int minlevel = MAX_PC_LEVEL, int level = MAX_PC_LEVEL);
+MQLIB_API int64_t CalcValue(int calc, int64_t base, int64_t max, int tick, int minlevel = MAX_PC_LEVEL, int level = MAX_PC_LEVEL);
 MQLIB_API char* GetSpellEffectName(int EffectID, char* szBuffer, size_t BufferSize);
 MQLIB_API void GetGameDate(int* Month, int* Day, int* Year);
 MQLIB_API void GetGameTime(int* Hour, int* Minute, int* Night);
@@ -743,10 +743,10 @@ MQLIB_API    int         GetSpellSubcategory(EQ_Spell* pSpell);
 MQLIB_OBJECT int         GetSpellSubcategory(const EQ_Affect& buff);
 MQLIB_OBJECT int         GetSpellSubcategory(CachedBuff buff);
 MQLIB_API    EQ_Spell*   GetSpellParent(int id);
-MQLIB_API    int         GetSpellCounters(eEQSPA spa, const EQ_Affect& buff); // Get spell counters of given spa for the given buff.
-MQLIB_API    int         GetMySpellCounters(eEQSPA spa);                      // Get spell counters of given spa on my character.
-MQLIB_API    int         GetTotalSpellCounters(const EQ_Affect& buff);        // Get total count of spell counters for the given buff.
-MQLIB_API    int         GetMyTotalSpellCounters();                           // Get total count of spell counters for my character.
+MQLIB_API    int64_t     GetSpellCounters(eEQSPA spa, const EQ_Affect& buff); // Get spell counters of given spa for the given buff.
+MQLIB_API    int64_t     GetMySpellCounters(eEQSPA spa);                      // Get spell counters of given spa on my character.
+MQLIB_API    int64_t     GetTotalSpellCounters(const EQ_Affect& buff);        // Get total count of spell counters for the given buff.
+MQLIB_API    int64_t     GetMyTotalSpellCounters();                           // Get total count of spell counters for my character.
 MQLIB_API    int         GetMeleeSpeedPctFromSpell(EQ_Spell* pSpell, bool increase);
 MQLIB_API    EQ_Spell*   GetHighestLearnedSpellByGroupID(int dwSpellGroupID);
 MQLIB_API    DWORD       GetSpellID(EQ_Spell* spell);
