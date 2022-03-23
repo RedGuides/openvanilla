@@ -1,6 +1,7 @@
 [submodule "src/eqlib"]
 	path = src/eqlib
-    url = https://gitlab.com/macroquest/next/eqlib.git
+	url = https://gitlab.com/macroquest/next/eqlib.git
+	branch = test
 [submodule "contrib/vcpkg"]
 	path = contrib/vcpkg
 	url = https://gitlab.com/macroquest/next/vcpkg.git
