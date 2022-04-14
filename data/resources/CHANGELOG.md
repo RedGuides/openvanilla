@@ -1,3 +1,18 @@
+April 13, 2022:
+- Fix Group.Members: Empty group will now report 0 instead of nil/NULL (#481).
+- Fix Math.Rand: Replace with new number generator. There are no longer any limits on the
+  upper or lower bounds of the random number range. The only requirement is that the
+  minimum value must not be greater than the maximum.
+- Fix Spell.Stacks to now only consider a duration if a nonzero value is provdied,
+  otherwise the stacks check will ignore duration. Also applies to StacksPet.
+- Fix crash in MapObject.cpp (#455).
+- Fix Macro TLO to allow IsTLO and IsVariable while a macro is not running (#452).
+- Add double click to select file in imgui file dialog (#453).
+- Add Group.LowMana to report group member with lowest mana below threshold. Works like
+  Group.Injured (#477).
+- lua: event text will now have mq color codes stripped (#486).
+
+
 March 9, 2022:
 - Updated for patch.
 - Me.AssistComplete is temporarily disabled. Its been broken since x64 but
