@@ -1,14 +1,14 @@
 [submodule "src/eqlib"]
 	path = src/eqlib
-	url = https://gitlab.com/macroquest/next/eqlib.git
+	url = https://github.com/macroquest/eqlib.git
 	branch = test
 [submodule "contrib/vcpkg"]
 	path = contrib/vcpkg
-	url = https://gitlab.com/macroquest/next/vcpkg.git
+	url = https://github.com/macroquest/vcpkg.git
 	branch = macroquest
 [submodule "data/lua/IntegrationTests"]
 	path = src/plugins/lua/lua/IntegrationTests
-	url = https://gitlab.com/macroquest/IntegrationTests.git
+	url = https://github.com/macroquest/integration-tests.git
 [submodule "plugins/MQ2AASpend"]
 	path = plugins/MQ2AASpend
 	url = https://gitlab.com/redguides/plugins/MQ2AASpend.git
