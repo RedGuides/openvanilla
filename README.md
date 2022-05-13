@@ -18,15 +18,11 @@ The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com
 
 > ```git clone --recurse-submodules -j8 https://gitlab.com/redguides/openvanilla.git```
 
-2) Run `MQ2Auth.exe` to generate the authorization file for your computer. Personal builds are machine-locked; they can only be run on the machine that built them. 
-
  <details>
    <summary>Alternate: Test Server</summary>
 
 1) Clone the repository with this line, (newest version of Git required)
 > ```git clone --recurse-submodules -j8 -b testserver https://gitlab.com/redguides/openvanilla.git```
-
-2) Run `MQ2Auth.exe` to generate the authorization file for your computer. Personal builds are machine-locked; they can only be run on the machine that built them. 
 </details>
 &nbsp;
 
@@ -70,7 +66,6 @@ Folder Name | Purpose
 build       | Build artifacts. This is where you can find the output when you compile MacroQuest and your plugins.
 contrib     | Third-Party source code.
 data        | Additional non-source code files used by MacroQuest.
-docs        | Documentation
 extras      | Optional files that aren't required but may be useful. This includes sources for plugins that are no longer maintained.
 include     | Public header files that are used for building MacroQuest and plugins.
 plugins     | This folder is reserved for you to add your own personal plugins.
@@ -78,7 +73,5 @@ src         | The source code for MacroQuest and its core plugins.
 tools       | Source code and additional tools that are used for MacroQuest development, but not part of the main project.
 
 ### Additional files of interest
-
-**MQ2Auth.exe** Generates MQ2Auth.h, run this first before building the solution
 
 **plugins/mkplugin.exe** Generates a new plugin from the template. Use this when creating a new plugin, or when converting an existing plugin from legacy MacroQuest.

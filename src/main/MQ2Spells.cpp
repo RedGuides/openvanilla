@@ -1,6 +1,6 @@
 /*
  * MacroQuest: The extension platform for EverQuest
- * Copyright (C) 2002-2021 MacroQuest Authors
+ * Copyright (C) 2002-2022 MacroQuest Authors
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as published by
@@ -4255,7 +4255,7 @@ void RemovePetBuff(SPAWNINFO* pChar, char* szLine)
 	char szArg[MAX_STRING] = { 0 };
 	GetMaybeQuotedArg(szArg, MAX_STRING, szLine, 1);
 
-	for (int nBuff = 0; nBuff < MAX_TOTAL_BUFFS; ++nBuff)
+	for (int nBuff = 0; nBuff < pPetInfoWnd->GetMaxBuffs(); ++nBuff)
 	{
 		EQ_Spell* pBuffSpell = GetSpellByID(pPetInfoWnd->Buff[nBuff]);
 		if (pBuffSpell && MaybeExactCompare(pBuffSpell->Name, szArg))
