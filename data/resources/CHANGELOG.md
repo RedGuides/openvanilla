@@ -1,3 +1,12 @@
+Jun 9, 2022:
+- ${Int[x]} is now capable of parsing numbers up to 64-bits, and will truncate the result.
+- Fix reporting of spell buff counters.
+
+Jun 8, 2022:
+- Fix detection of aura and campfire spawns (#561)
+- Fix ${Target.ID} now returns 0 instead of NULL to be consistent with
+  other spawn type objects.
+
 Jun 1, 2022:
 - Fix ${Me.SkillCap} (#568)
 
