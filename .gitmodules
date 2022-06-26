@@ -232,3 +232,6 @@
 [submodule "plugins/MQ2ToolTip"]
 	path = plugins/MQ2ToolTip
 	url = https://gitlab.com/redguides/plugins/MQ2ToolTip.git
+[submodule "plugins/MQ2Vendors"]
+	path = plugins/MQ2Vendors
+	url = https://gitlab.com/redguides/plugins/MQ2Vendors.git
