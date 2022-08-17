@@ -901,7 +901,14 @@ void HandleCommand(HWND hWnd, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case ID_FORCEUNLOADOFALLMQ2:
-		//ForceRemoteUnload();
+		for (int connId : gPipeServer->GetConnectionIds())
+		{
+			SPDLOG_DEBUG("Requesting forced unload to connection Id {0}", connId);
+			gPipeServer->SendMessage(connId, MQMessageId::MSG_MAIN_REQ_FORCEUNLOAD, nullptr, 0);
+		}
+		break;
+
+	case ID_UNLOADALLMQ:
 		for (int connId : gPipeServer->GetConnectionIds())
 		{
 			SPDLOG_DEBUG("Requesting unload to connection Id {0}", connId);
@@ -1161,6 +1168,7 @@ int WINAPI CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR 
 	else if (!gEnableCrashpad)
 		SPDLOG_INFO("Crashpad is disabled.");
 
+#if defined(_WIN64)
 	// TODO:  Allow argument processing of passing ini file so the file can be launched from anywhere
 	std::string fullCommandLine = "";
 	bool spawnedProcess = false;
@@ -1266,6 +1274,7 @@ int WINAPI CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR 
 			exit(0);
 		}
 	}
+#endif // defined(_WIN64)
 
 	// Initialize COM
 	auto coCleanup = wil::CoInitializeEx();
