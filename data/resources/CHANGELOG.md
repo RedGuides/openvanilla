@@ -1,3 +1,23 @@
+September 18, 2022:
+- emu: Added back /timestamp for emulator builds to add timestamps to chat. Added checkbox
+  to the mq settings window under a new "Chat" section. (#618)
+- emu: Fix title bar click events on MQ2ChatWnd. (#616)
+- emu: Fix tabselect crash. (#622)
+- emu: Fix crash when checking spell stacking. (#624)
+- emu: Fix crash when interacting with merchants. (#626)
+- emu: Re-introduce GroupLeaderExp, GroupLeaderPoints, PctGroupLeaderExp, RaidLeaderExp,
+  RaidLeaderPoints, PctRaidLeaderExp. (#625)
+- emu: Re-introduce support for LAMarkNPC, LANPCHealth, LADelegateMA, LADelegateMarkNPC,
+  LAInspectBuffs, LASpellAwareness, LAOffenseEnhancement, LAManaEnhancement, LAHealthEnhancement,
+  LAHealthRegen, LAFindPathPC, LAHoTT (#625)
+
+September 7, 2022:
+- /captioncolor will work when typed in EQ chat windows again (#619)
+- Autologin profiles launched from MQ will now work properly for servers with spaces in
+  their shortname
+- Fixed a crash that would occur in macros when declaring an array of invalid size
+- The "noparse" parameter in the Ini TLO is no longer case sensitive
+
 Aug 19, 2022:
 - Add ${MacroQuest.BuildName} to get the name of the build target (Live/Test/Emu)
 
@@ -5,7 +25,7 @@ Aug 17, 2022:
 - Fix autoskills not returning proper values
 
 Aug 17, 2022 (live):
-- Updated for patch 
+- Updated for patch
 
 Aug 12, 2022:
 - /mapfilter will now store Radius values instead of toggle information (Fixes #600)
