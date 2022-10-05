@@ -236,3 +236,6 @@
 [submodule "plugins/MQ2Vendors"]
 	path = plugins/MQ2Vendors
 	url = https://gitlab.com/redguides/plugins/MQ2Vendors.git
+[submodule "plugins/MQMountClassicModels"]
+	path = plugins/MQMountClassicModels
+	url = https://github.com/Knightly1/MQMountClassicModels.git
