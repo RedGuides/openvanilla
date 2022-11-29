@@ -1,3 +1,16 @@
+November 29, 2022:
+- emu: Fix PctExp and PctAAExp calculations
+- tlo: Added BazaarItem.FullName
+- lua: Fixed bug where /lua pause would not pause imgui thread
+- lua: added :on and :off arguments to /lua pause
+
+November 28, 2022:
+- Huge update to settings window for MQ2Map plugin settings - /mqsettings plugin/map (#657)
+- lua: Many more improvements to imgui bindings for lua.
+- lua: Consolidated imgui demo scripts into examples/imgui_demo
+- lua: Scripts can now be started by specifying a folder name if the folder contains init.lua.
+- lua: Scripts can now require files relative to the directory that the script runs in.
+
 November 24, 2022:
 - test: fix zone count
 - test: fix keybinds
