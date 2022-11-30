@@ -460,13 +460,10 @@ static uint32_t LuaRunCommand(const std::string& script, const std::vector<std::
 
 	// Need to do this first to get the script path and compare paths instead of just the names
 	// since there are multiple valid ways to name the same script
-	auto script_path = fs::path{ s_environment.luaDir } / script;
-	if (!script_path.has_extension()) script_path.replace_extension(".lua");
-
-	std::error_code ec;
-	if (!std::filesystem::exists(script_path, ec))
+	auto script_path = LuaThread::GetScriptPath(script, s_environment.luaDir);
+	if (script_path.empty())
 	{
-		LuaError("Could not find script at path %s", script_path.string().c_str());
+		LuaError("Could not find script %s", script.c_str());
 		return 0;
 	}
 
@@ -503,7 +500,7 @@ static uint32_t LuaRunCommand(const std::string& script, const std::vector<std::
 
 	WriteChatStatus("Running lua script '%s' with PID %d", script.c_str(), entry->GetPID());
 
-	std::optional<LuaThreadInfo> result = entry->StartFile(script, args);
+	std::optional<LuaThreadInfo> result = entry->StartFile(script_path, args);
 	if (result)
 	{
 		result->status = LuaThreadStatus::Running;
@@ -572,8 +569,9 @@ static void LuaStopCommand(std::optional<std::string> script = std::nullopt)
 		}
 		else
 		{
+			std::string script_name = LuaThread::GetCanonicalScriptName(*script, s_environment.luaDir);
 			thread_it = std::find_if(s_running.begin(), s_running.end(),
-				[&script](const std::shared_ptr<LuaThread>& thread) { return ci_equals(thread->GetName(), *script); });
+				[&script_name](const std::shared_ptr<LuaThread>& thread) { return ci_equals(thread->GetName(), script_name); });
 		}
 
 		if (thread_it != s_running.end())
@@ -587,7 +585,8 @@ static void LuaStopCommand(std::optional<std::string> script = std::nullopt)
 		}
 		else
 		{
-			WriteChatStatus("No lua script '%s' to end", script->c_str());
+			std::string script_name = LuaThread::GetCanonicalScriptName(*script, s_environment.luaDir);
+			WriteChatStatus("No lua script '%s' to end", script_name.c_str());
 		}
 	}
 	else
@@ -602,8 +601,19 @@ static void LuaStopCommand(std::optional<std::string> script = std::nullopt)
 	}
 }
 
-static void LuaPauseCommand(std::optional<std::string> script = std::nullopt)
+static void LuaPauseCommand(std::optional<std::string> script, bool on, bool off)
 {
+	auto toggle = [](const std::shared_ptr<LuaThread>& thread)
+	{
+		LuaThreadStatus status = thread->Pause();
+
+		auto info = s_infoMap.find(thread->GetPID());
+		if (info != s_infoMap.end())
+		{
+			info->second.status = std::move(status);
+		}
+	};
+
 	if (script)
 	{
 		auto thread_it = s_running.end();
@@ -624,18 +634,39 @@ static void LuaPauseCommand(std::optional<std::string> script = std::nullopt)
 		{
 			std::shared_ptr<LuaThread>& thread = *thread_it;
 
-			LuaThreadStatus status = thread->Pause();
-
-			auto info = s_infoMap.find(thread->GetPID());
-			if (info != s_infoMap.end())
+			if ((on && !thread->IsPaused()) || (off && thread->IsPaused()) || (!on && !off))
 			{
-				info->second.status = std::move(status);
+				toggle(thread);
 			}
 		}
 		else
 		{
 			WriteChatStatus("No lua script '%s' to pause/resume", script->c_str());
 		}
+	}
+	else if (on)
+	{
+		for (const auto& thread : s_running)
+		{
+			if (!thread->IsPaused())
+			{
+				toggle(thread);
+			}
+		}
+
+		WriteChatStatus("Pausing ALL running lua scripts");
+	}
+	else if (off)
+	{
+		for (const auto& thread : s_running)
+		{
+			if (thread->IsPaused())
+			{
+				toggle(thread);
+			}
+		}
+
+		WriteChatStatus("Resuming ALL paused lua scripts");
 	}
 	else
 	{
@@ -648,12 +679,9 @@ static void LuaPauseCommand(std::optional<std::string> script = std::nullopt)
 			// have at least one running script, so pause all running scripts
 			for (const std::shared_ptr<LuaThread>& thread : s_running)
 			{
-				LuaThreadStatus status = thread->Pause();
-
-				auto info = s_infoMap.find(thread->GetPID());
-				if (info != s_infoMap.end())
+				if (!thread->IsPaused())
 				{
-					info->second.status = std::move(status);
+					toggle(thread);
 				}
 			}
 
@@ -664,13 +692,7 @@ static void LuaPauseCommand(std::optional<std::string> script = std::nullopt)
 			// we have no running scripts, so restart all paused scripts
 			for (const std::shared_ptr<LuaThread>& thread : s_running)
 			{
-				LuaThreadStatus status = thread->Pause();
-
-				auto info = s_infoMap.find(thread->GetPID());
-				if (info != s_infoMap.end())
-				{
-					info->second.status = std::move(status);
-				}
+				toggle(thread);
 			}
 
 			WriteChatStatus("Resuming ALL paused lua scripts");
@@ -722,6 +744,15 @@ static void ReadSettings()
 	if (mq::test_and_set(s_luaDirName, s_configNode[luaDir].as<std::string>(s_luaDirName)) || s_environment.luaDir.empty())
 	{
 		s_environment.luaDir = (std::filesystem::path(gPathMQRoot) / s_luaDirName).string();
+		for (auto& thread : s_running)
+		{
+			thread->UpdateLuaDir(s_environment.luaDir);
+		}
+
+		for (auto& thread : s_pending)
+		{
+			thread->UpdateLuaDir(s_environment.luaDir);
+		}
 
 		std::error_code ec;
 		if (!std::filesystem::exists(s_environment.luaDir, ec)
@@ -811,14 +842,45 @@ static void LuaConfCommand(const std::string& setting, const std::string& value)
 {
 	if (!value.empty())
 	{
-		WriteChatStatus("Lua setting %s to %s and saving...", setting.c_str(), value.c_str());
-		s_configNode[setting] = value;
+		if (ci_equals(setting, luaRequirePaths) || ci_equals(setting, dllRequirePaths))
+		{
+			if (s_configNode[setting].IsNull())
+				s_configNode[setting] = YAML::Load("[]");
+
+			auto it = std::find_if(s_configNode[setting].begin(), s_configNode[setting].end(), [&value](const auto& node)
+				{
+					return node.IsScalar() && ci_equals(value, node.as<std::string>());
+				});
+			if (it != s_configNode[setting].end())
+			{
+				WriteChatStatus("Lua removing %s from %s and saving...", value.c_str(), setting.c_str());
+				s_configNode[setting].remove(std::distance(s_configNode[setting].begin(), it));
+				if (s_configNode[setting].size() == 0)
+					s_configNode.remove(setting);
+			}
+			else
+			{
+				WriteChatStatus("Lua adding %s to %s and saving...", value.c_str(), setting.c_str());
+				s_configNode[setting].push_back(value);
+			}
+		}
+		else
+		{
+			WriteChatStatus("Lua setting %s to %s and saving...", setting.c_str(), value.c_str());
+			s_configNode[setting] = value;
+		}
 		WriteSettings();
 		ReadSettings();
 	}
 	else if (s_configNode[setting])
 	{
-		WriteChatStatus("Lua setting %s is set to %s.", setting.c_str(), s_configNode[setting].as<std::string>().c_str());
+		if (s_configNode[setting].IsSequence())
+		{
+			auto vec = s_configNode[setting].as<std::vector<std::string>>();
+			WriteChatStatus("Lua setting %s is set to [%s].", setting.c_str(), join(vec, ", ").c_str());
+		}
+		else
+			WriteChatStatus("Lua setting %s is set to %s.", setting.c_str(), s_configNode[setting].as<std::string>().c_str());
 	}
 	else
 	{
@@ -924,11 +986,17 @@ static void LuaGuiCommand()
 	s_configNode[showMenu] = s_showMenu;
 }
 
+static args::HelpFlag HelpFlag(args::Group& group)
+{
+	return args::HelpFlag(group, "help", "displays this help text", { 'h', '?', "help" });
+}
+
 void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 {
 	MQ2Args arg_parser("Lua: A lua script binding plugin.");
 	arg_parser.Prog("/lua");
 	arg_parser.RequireCommand(false);
+	arg_parser.LongPrefix(":");
 	args::Group commands(arg_parser, "", args::Group::Validators::AtMostOne);
 
 	args::Command run(commands, "run", "run lua script from file location",
@@ -937,7 +1005,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 			args::Group arguments(parser, "", args::Group::Validators::AllChildGroups);
 			args::Positional<std::string> script(arguments, "script", "the name of the lua script to run. will automatically append .lua extension if no extension specified.");
 			args::PositionalList<std::string> script_args(arguments, "args", "optional arguments to pass to the lua script.");
-			MQ2HelpArgument h(arguments);
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
 			if (script) LuaRunCommand(script.Get(), script_args.Get());
@@ -948,7 +1016,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 		{
 			args::Group arguments(parser, "", args::Group::Validators::DontCare);
 			args::PositionalList<std::string> script(arguments, "script", "the text of the lua script to run");
-			MQ2HelpArgument h(arguments);
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
 			if (script) LuaParseCommand(join(script.Get(), " "));
@@ -959,7 +1027,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 		{
 			args::Group arguments(parser, "", args::Group::Validators::AtMostOne);
 			args::Positional<std::string> script(arguments, "process", "optional parameter to specify a PID or name of script to stop, if not specified will stop all running scripts.");
-			MQ2HelpArgument h(arguments);
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
 			if (script) LuaStopCommand(script.Get());
@@ -972,11 +1040,16 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 		{
 			args::Group arguments(parser, "", args::Group::Validators::AtMostOne);
 			args::Positional<std::string> script(arguments, "process", "optional parameter to specify a PID or name of script to pause, if not specified will pause all running scripts.");
-			MQ2HelpArgument h(arguments);
+
+			args::Group idempotent(parser, "", args::Group::Validators::AtMostOne);
+			args::Flag on(idempotent, "on", "idempotently turn pause on", { "on" });
+			args::Flag off(idempotent, "off", "idempotently turn pause on", { "off" });
+
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
-			if (script) LuaPauseCommand(script.Get());
-			else LuaPauseCommand();
+			if (script) LuaPauseCommand(script.Get(), on, off);
+			else LuaPauseCommand({}, on, off);
 		});
 	pause.RequireCommand(false);
 
@@ -986,7 +1059,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 			args::Group arguments(parser, "", args::Group::Validators::AtLeastOne);
 			args::Positional<std::string> setting(arguments, "setting", "The setting to display/set");
 			args::PositionalList<std::string> value(arguments, "value", "An optional parameter to specify the value to set");
-			MQ2HelpArgument h(arguments);
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
 			if (setting) LuaConfCommand(setting.Get(), join(value.Get(), " "));
@@ -996,7 +1069,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 		[](args::Subparser& parser)
 		{
 			args::Group arguments(parser, "", args::Group::Validators::DontCare);
-			MQ2HelpArgument h(arguments);
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
 			WriteChatStatus("Reloading lua config.");
@@ -1008,7 +1081,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 		{
 			args::Group arguments(parser, "", args::Group::Validators::AtMostOne);
 			args::PositionalList<std::string> filters(arguments, "filters", "optional parameters to specify status filters. Defaults to RUNNING or PAUSED.");
-			MQ2HelpArgument h(arguments);
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
 			LuaPSCommand(filters.Get());
@@ -1019,7 +1092,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 		{
 			args::Group arguments(parser, "", args::Group::Validators::AtMostOne);
 			args::Positional<std::string> script(arguments, "process", "optional parameter to specify a PID or name of script to get info for, if not specified will return table of all scripts.");
-			MQ2HelpArgument h(arguments);
+			auto h = HelpFlag(parser);
 			parser.Parse();
 
 			if (script) LuaInfoCommand(script.Get());
@@ -1033,7 +1106,7 @@ void LuaCommand(SPAWNINFO* pChar, char* Buffer)
 			LuaGuiCommand();
 		});
 
-	MQ2HelpArgument h(commands);
+	auto h = HelpFlag(commands);
 
 	auto args = allocate_args(Buffer);
 	try
@@ -1086,7 +1159,7 @@ void LuaEnvironmentSettings::ConfigureLuaState(sol::state_view sv)
 	}
 
 	// always search the local dir first, then luarocks in modules, then anything specified by the user, then the default paths
-	sv["package"]["path"] = fmt::format("{luaDir}\\?.lua;{moduleDir}\\luarocks\\share\\lua\\{luaVersion}\\?.lua;{moduleDir}\\luarocks\\share\\lua\\{luaVersion}\\?\\init.lua;{additionalPaths}{originalPath}",
+	sv["package"]["path"] = fmt::format("{luaDir}\\?.lua;{luaDir}\\?\\init.lua;{moduleDir}\\luarocks\\share\\lua\\{luaVersion}\\?.lua;{moduleDir}\\luarocks\\share\\lua\\{luaVersion}\\?\\init.lua;{additionalPaths}{originalPath}",
 		fmt::arg("luaDir", luaDir),
 		fmt::arg("moduleDir", moduleDir),
 		fmt::arg("luaVersion", m_version),
@@ -1757,7 +1830,7 @@ PLUGIN_API void OnUpdateImGui()
 
 				if (ImGui::Button(info.status == LuaThreadStatus::Paused ? "Resume" : "Pause"))
 				{
-					LuaPauseCommand(fmt::format("{}", info.pid));
+					LuaPauseCommand(fmt::format("{}", info.pid), false, false);
 				}
 			}
 			else
