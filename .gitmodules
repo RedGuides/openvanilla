@@ -239,3 +239,9 @@
 [submodule "plugins/MQMountClassicModels"]
 	path = plugins/MQMountClassicModels
 	url = https://github.com/Knightly1/MQMountClassicModels.git
+[submodule "plugins/MQ2DotNet"]
+	path = plugins/MQ2DotNet
+	url = https://github.com/projecteon/MQ2DotNet.git
+[submodule "plugins/MQ2Tracking"]
+	path = plugins/MQ2Tracking
+	url = https://gitlab.com/redguides/plugins/MQ2Tracking.git
