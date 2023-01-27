@@ -5,6 +5,7 @@ January 23, 2023:
 - spell datatype: Added /vardata and /varset support for spell variables. Assigning
   a string or number will reassign the spell variable by spell name or id.
 - achievement datatype: Add Inspect method to open achievement display window.
+- emu: Fix crash when declaring a spell var (#688).
 
 January 19, 2023:
 - live: Fix for broken world container
@@ -15,13 +16,21 @@ January 18, 2023:
 January 17, 2023:
 - item datatype: Add Item.Inspect method to open item display window on a particular item.
 
+January 10, 2023:
+- test: updated for patch
+
 January 8, 2023:
 - fix /removeaug (#669).
 - imgui: Fix nested BeginDisabled calls (#672).
+- emu: Fix TradeReady flags (#666).
+- emu: Fix /itemnotify when matching invslot is also in a hotbutton.
 
 January 6, 2023:
 - lua: Added mq/Icons.lua for Icon usage in imgui
 - tlo: Added Spell.Dispellable which returns true if a spell can be dispelled (#655)
+
+December 14, 2022:
+- test: updated for patch
 
 December 8, 2022:
 - live: updated for patch
