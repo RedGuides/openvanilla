@@ -244,3 +244,6 @@
 [submodule "plugins/MQ2Tracking"]
 	path = plugins/MQ2Tracking
 	url = https://gitlab.com/redguides/plugins/MQ2Tracking.git
+[submodule "plugins/MQTextToSpeech"]
+	path = plugins/MQTextToSpeech
+	url = https://github.com/Knightly1/MQTextToSpeech.git
