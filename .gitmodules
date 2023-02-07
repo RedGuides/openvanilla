@@ -248,3 +248,6 @@
 [submodule "plugins/MQTextToSpeech"]
 	path = plugins/MQTextToSpeech
 	url = https://github.com/Knightly1/MQTextToSpeech.git
+[submodule "plugins/MQ2MeshManager"]
+	path = plugins/MQ2MeshManager
+	url = https://github.com/wired420/MQ2MeshManager.git
