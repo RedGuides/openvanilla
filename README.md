@@ -9,7 +9,7 @@ The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com
 
 ### Prerequisites
 
-* [Visual Studio 2019 Community](https://visualstudio.microsoft.com/downloads/)
+* [Visual Studio 2022 Community](https://visualstudio.microsoft.com/downloads/)
 * [Git for Windows](https://git-scm.com/)
 
 ### Prepare for build
