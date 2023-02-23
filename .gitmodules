@@ -96,9 +96,6 @@
 [submodule "plugins/MQ2FeedMe"]
 	path = plugins/MQ2FeedMe
 	url = https://gitlab.com/redguides/plugins/MQ2FeedMe.git
-[submodule "plugins/MQ2GMCheck"]
-	path = plugins/MQ2GMCheck
-	url = https://gitlab.com/redguides/plugins/MQ2GMCheck.git
 [submodule "plugins/MQ2GroupInfo"]
 	path = plugins/MQ2GroupInfo
 	url = https://gitlab.com/redguides/plugins/MQ2GroupInfo.git
@@ -251,3 +248,6 @@
 [submodule "plugins/MQ2MeshManager"]
 	path = plugins/MQ2MeshManager
 	url = https://github.com/wired420/MQ2MeshManager.git
+[submodule "plugins/MQ2GMCheck"]
+	path = plugins/MQ2GMCheck
+	url = https://github.com/MMOBugs/MQ2GMCheck.git
