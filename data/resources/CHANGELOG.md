@@ -1,3 +1,12 @@
+February 24, 2023:
+- Fix CryptAcquireContext error when importing Autologin profiles
+
+February 21, 2023:
+- GetSpellDuration now returns correct duration. Deprecated EQGetSpellDuration.
+
+February 20, 2023:
+- emu: MQ Console will now allow GM commands (#zone)
+
 February 15, 2023:
 - live: Update for patch
 
