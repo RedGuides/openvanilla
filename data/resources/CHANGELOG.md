@@ -1,3 +1,30 @@
+April 24, 2023:
+- Fix an issue where the loader would spam the log file with an error if more than
+  64 eqgame.exe processes were running. Instead, it will swap to the WMI process
+  monitor to retain functionality.
+- Add experimental feature that resizes the game's render viewport to fit the central
+  docking area when imgui windows are docked to edges of the screen. This can be enabled
+  in Settings under Overlay (/mqsettings overlay).
+
+April 19, 2023:
+- live: Updated for patch
+
+March 15, 2023:
+- live: Updated for patch
+- live: fixed zone guide structure
+
+March 8, 2023:
+- test: Updated for patch
+
+February 24, 2023:
+- Fix CryptAcquireContext error when importing Autologin profiles
+
+February 23, 2023:
+- test: Updated for patch
+
+February 21, 2023:
+- GetSpellDuration now returns correct duration. Deprecated EQGetSpellDuration.
+
 February 20, 2023:
 - emu: MQ Console will now allow GM commands (#zone)
 

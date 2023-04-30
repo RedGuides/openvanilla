@@ -1,6 +1,6 @@
 /*
  * MacroQuest: The extension platform for EverQuest
- * Copyright (C) 2002-2022 MacroQuest Authors
+ * Copyright (C) 2002-2023 MacroQuest Authors
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as published by
@@ -19,6 +19,7 @@
 #include "MQ2Utilities.h"
 
 #include <mq/api/Items.h>
+#include <mq/base/WString.h>
 
 #include <DbgHelp.h>
 #include <PathCch.h>
@@ -6869,24 +6870,6 @@ inline SPAWNINFO* GetGroupMember(int index)
 	return nullptr;
 }
 
-uint32_t GetGroupMainAssistTargetID()
-{
-	if (!pLocalPC || !pLocalPC->Group) return 0;
-	if (!pLocalPlayer) return 0;
-
-	return pLocalPlayer->GroupAssistNPC[0];
-}
-
-uint32_t GetRaidMainAssistTargetID(int index)
-{
-	if (!pLocalPlayer) return 0;
-
-	if (index < 0 || index >= (int)lengthof(pLocalPlayer->RaidAssistNPC))
-		return 0;
-
-	return pLocalPlayer->RaidAssistNPC[index];
-}
-
 uint32_t GetGroupMarkedTargetID(int index)
 {
 	if (!pLocalPlayer || !pLocalPC->Group) return 0;
@@ -6905,33 +6888,6 @@ uint32_t GetRaidMarkedTargetID(int index)
 		return 0;
 
 	return pLocalPlayer->RaidMarkNPC[index];
-}
-
-bool IsAssistNPC(SPAWNINFO* pSpawn)
-{
-	if (!pSpawn)
-		return false;
-
-	if (uint32_t AssistID = GetGroupMainAssistTargetID())
-	{
-		if (AssistID == pSpawn->SpawnID)
-		{
-			return true;
-		}
-	}
-
-	for (int nAssist = 0; nAssist < MAX_RAID_ASSISTS; nAssist++)
-	{
-		if (uint32_t AssistID = GetRaidMainAssistTargetID(nAssist))
-		{
-			if (AssistID == pSpawn->SpawnID)
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
 }
 
 void DoFace(SPAWNINFO* pChar, CVector3 Position)

@@ -1,6 +1,6 @@
 /*
  * MacroQuest: The extension platform for EverQuest
- * Copyright (C) 2002-2022 MacroQuest Authors
+ * Copyright (C) 2002-2023 MacroQuest Authors
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as published by
@@ -3591,18 +3591,30 @@ public:
 
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 9);
 
-			DisplaySwitchData();
+			if (!pSwitchMgr)
+			{
+				open = false;
+			}
+			else
+			{
+				EQSwitch* pSwitch = pSwitchMgr->GetSwitchById(m_id);
+				if (!pSwitch)
+				{
+					open = false;
+				}
+				else
+				{
+					DisplaySwitchData(pSwitch);
+				}
+			}
 		}
 		ImGui::End();
 
 		return open;
 	}
 
-	void DisplaySwitchData()
+	void DisplaySwitchData(EQSwitch* pSwitch)
 	{
-		if (!pSwitchMgr) return;
-		EQSwitch* pSwitch = pSwitchMgr->GetSwitchById(m_id);
-
 		if (ImGui::SmallButton("Click"))
 		{
 			pSwitch->UseSwitch(pLocalPlayer->SpawnID, -1, 0, nullptr);

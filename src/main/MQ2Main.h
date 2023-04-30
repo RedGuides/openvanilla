@@ -1,6 +1,6 @@
 /*
  * MacroQuest: The extension platform for EverQuest
- * Copyright (C) 2002-2022 MacroQuest Authors
+ * Copyright (C) 2002-2023 MacroQuest Authors
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as published by
@@ -383,8 +383,6 @@ MQLIB_API bool IsGuildMember(const char* SpawnName);
 MQLIB_API int GetGroupMercenaryCount(uint32_t ClassMASK);
 MQLIB_API SPAWNINFO* GetRaidMember(int index);
 MQLIB_API SPAWNINFO* GetGroupMember(int index);
-MQLIB_API uint32_t GetGroupMainAssistTargetID();
-MQLIB_API uint32_t GetRaidMainAssistTargetID(int index);
 MQLIB_API uint32_t GetGroupMarkedTargetID(int index);
 MQLIB_API uint32_t GetRaidMarkedTargetID(int index);
 MQLIB_API bool IsAssistNPC(SPAWNINFO* pSpawn);
@@ -405,7 +403,6 @@ MQLIB_API ItemDefinition* GetItemFromContents(ItemClient* c);
 MQLIB_API bool AddMacroLine(const char* FileName, char* szLine, size_t Linelen, int* LineNumber, int localLine);
 
 MQLIB_API const char* GetLightForSpawn(SPAWNINFO* pSpawn);
-MQLIB_API int GetSpellDuration(EQ_Spell* pSpell, PlayerClient* pSpawn);
 MQLIB_API int GetDeityTeamByID(int DeityID);
 MQLIB_API int ConColor(SPAWNINFO* pSpawn);
 
