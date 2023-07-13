@@ -1,3 +1,12 @@
+Jul 10, 2023:
+- test: updated for test patch
+
+Jul 8, 2023:
+- Fix PackageMan issue with loading submodules in a single line
+
+Jul 6, 2023:
+- Fix scoping issues in PackageMan causing lua errors (#731)
+
 Jun 29, 2023:
 - test: updated for test patch
 
