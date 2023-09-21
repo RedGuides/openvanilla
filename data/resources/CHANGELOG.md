@@ -1,3 +1,11 @@
+Test has switched to DirectX 11. The overlay is not available until it can be re-implemented for DX11.
+
+Sep 20, 2023:
+- test: updated for latest patch
+- Fixed calculation of HasSPA, which should fix some properties such as Me.Silenced (#739)
+- Expand the coverage of game feature and claim data (developer tools)
+- Lifetime All-access should now appear as GOLD in ${Me.Subscription} instead of UNKNOWN
+
 Aug 26, 2023:
 - test: updated for latest patch
 
