@@ -75,7 +75,7 @@ static std::string lua_Parse(const char* text)
 
 #pragma region Thread Bindings
 
-static void lua_delay(sol::object delayObj, sol::object conditionObj, sol::this_state s)
+static void lua_delay(sol::object delayObj, std::optional<sol::object> conditionObj, sol::this_state s)
 {
 	if (std::shared_ptr<LuaThread> thread_ptr = LuaThread::get_from(s))
 	{
@@ -254,6 +254,26 @@ static sol::table lua_getFilteredSpawns(sol::this_state L, std::optional<sol::fu
 	}
 
 	return table;
+}
+
+static sol::table lua_getAllGroundItems(sol::this_state L)
+{
+    auto table = sol::state_view(L).create_table();
+
+    if (pItemList)
+    {
+        auto pGroundItem = pItemList->Top;
+        while (pGroundItem != nullptr)
+        {
+            auto groundTypeVar = datatypes::MQ2GroundType::MakeTypeVar(MQGroundSpawn(pGroundItem));
+            auto lua_ground = lua_MQTypeVar(groundTypeVar);
+            table.add(std::move(lua_ground));
+
+            pGroundItem = pGroundItem->pNext;
+        }
+    }
+
+    return table;
 }
 
 static sol::table lua_getFilteredGroundItems(sol::this_state L, std::optional<sol::function> predicate)
@@ -588,6 +608,7 @@ void RegisterBindings_MQ(LuaThread* thread, sol::table& mq)
 	// Direct Data Bindings
 	mq.set_function("getAllSpawns", &lua_getAllSpawns);
 	mq.set_function("getFilteredSpawns", &lua_getFilteredSpawns);
+	mq.set_function("getAllGroundItems", &lua_getAllGroundItems);
 	mq.set_function("getFilteredGroundItems", &lua_getFilteredGroundItems);
 }
 

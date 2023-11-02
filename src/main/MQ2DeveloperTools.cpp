@@ -1776,22 +1776,146 @@ public:
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
 
+			static std::unordered_map<int, std::string> ConsumableFeatureNames = {
+				{ EQFeature_MerchantPerk, "Merchant Perk" },
+				{ EQFeature_DragonHoard, "Dragon Hoard" },
+				{ EQFeature_TradeskillDepot, "Tradeskill Depot" },
+				{ EQFeature_TradeskillDepotSlots, "Tradeskill Depot Slots" },
+			};
+
 			if (ImGui::TreeNode("Consumable Features"))
 			{
 				for (const auto& ClaimData : pLocalPC->ConsumableFeatures.claimData)
 				{
 					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
 
-					ImGui::TableNextColumn(); ImGui::Text("%d", ClaimData.featureId);
-					ImGui::TableNextColumn(); ImGui::Text("%d", ClaimData.count);
+					int featureId = ClaimData.featureId;
+
+					if (const ClaimFeatureData* featureData = pClaimWnd->claimFeatureData.GetClaimFeatureDataByFeatureId(featureId))
+					{
+						bool expand = false;
+						char szLabel[128];
+
+						if (featureData->itemCount > 0)
+						{
+							sprintf_s(szLabel, "%s (%d)", featureData->items[0].itemName.c_str(), featureId);
+						}
+						else
+						{
+							sprintf_s(szLabel, "%d", featureId);
+						}
+
+						expand = ImGui::TreeNode(szLabel);
+
+						ImGui::TableNextColumn();
+						ImGui::Text("%d", featureData->featureCount);
+
+						if (expand)
+						{
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+
+							if (featureData->itemCount > 0)
+							{
+								char szLabel[32];
+								if (featureData->itemCount == 1)
+									strcpy_s(szLabel, "1 Item");
+								else
+									sprintf_s(szLabel, "%d Items", featureData->itemCount);
+
+								if (ImGui::TreeNode(szLabel))
+								{
+									for (int itemIdx = 0; itemIdx < featureData->itemCount; ++itemIdx)
+									{
+										const ClaimItemData& itemData = featureData->items[itemIdx];
+
+										ImGui::TableNextRow();
+										ImGui::TableNextColumn(); ImGui::Text("%s (%d)", itemData.itemName.c_str(), itemData.itemId);
+										ImGui::TableNextColumn(); ImGui::Text("%d", itemData.itemCount);
+									}
+
+									ImGui::TreePop();
+
+								}
+							}
+
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn(); ImGui::Text("Description");
+							ImGui::TableNextColumn(); ImGui::Text("%s", pDBStr->GetString(featureData->stringId, eClaimFeatureDescription));
+
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn(); ImGui::Text("Requirements Met");
+							ImGui::TableNextColumn(); ImGui::Text("%s", featureData->meetsRequirements ? "Yes": "No");
+
+							ImGui::TreePop();
+						}
+					}
+					else
+					{
+						ImGui::Indent();
+						auto iter = ConsumableFeatureNames.find(ClaimData.featureId);
+						if (iter != ConsumableFeatureNames.end())
+						{
+							ImGui::Text("%s (%d)", iter->second.c_str(), ClaimData.featureId);
+						}
+						else
+						{
+							ImGui::Text("%d", ClaimData.featureId);
+						}
+
+						ImGui::TableNextColumn();
+						ImGui::Text("%d", ClaimData.count);
+						ImGui::Unindent();
+					}
 				}
 
 				ImGui::TreePop();
 			}
+
 			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+
 			if (ImGui::TreeNode("Game Features"))
 			{
+				FreeToPlayClient& client = FreeToPlayClient::Instance();
 
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Membership Level");
+				ImGui::TableNextColumn(); ImGui::Text("%s (%d)", FreeToPlayClient::ToString(client.MembershipLevel),
+					client.MembershipLevel);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Subscription days");
+				ImGui::TableNextColumn(); ImGui::Text("%d", pLocalPC->SubscriptionDays);
+
+				for (int i = 0; i < (int)GameFeature::Max; ++i)
+				{
+					const RestrictionInfo& info = FreeToPlayClient::RestrictionInfo[i];
+					GameFeature feature = static_cast<GameFeature>(i);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("%s", info.string);
+
+					int data = pLocalPC->GetGameFeature(feature);
+					if (info.boolean)
+					{
+						ImGui::TableNextColumn();
+						if (data != 0)
+							ImGui::TextColored(MQColor(0, 255, 0).ToImColor(), "Enabled");
+						else
+							ImGui::TextColored(MQColor(255, 0, 0).ToImColor(), "Disabled");
+					}
+					else
+					{
+						ImGui::TableNextColumn();
+
+						if (data == -1)
+							ImGui::TextColored(MQColor(127, 127, 127).ToImColor(), "Unrestricted");
+						else
+							ImGui::Text("%d", data);
+					}
+				}
 
 				ImGui::TreePop();
 			}
@@ -2113,6 +2237,70 @@ public:
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn(); ImGui::Text("Auto Range Attack");
 				ImGui::TableNextColumn(); ImGui::Text("%d", eq.bAutoRangeAttack);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Show Names Level");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.iShowNamesLevel);
+
+				ImGui::TreePop();
+			}
+
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			if (ImGui::TreeNode("Game Options"))
+			{
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Gamma");
+				ImGui::TableNextColumn(); ImGui::Text("%.2f", eq.gOpt.gamma);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Anonymous");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.anonymous);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Trade");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.trade);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("GuildInvites");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.guildInvites);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Sky");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.sky);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("LoD");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.lod);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("PCNames");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.pcNames);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("NPCNames");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.npcNames);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("PetOwnerNames");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.petNames);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("MercOwnerNames");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.mercNames);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("TargetHealth");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.targetHealth);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("ItemPlacementHideUI");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.itemPalcementHideUI);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("ItemPlacementDefaultModeCursor");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.itemPlacementDefaultModeCursor);
+
 
 				ImGui::TreePop();
 			}

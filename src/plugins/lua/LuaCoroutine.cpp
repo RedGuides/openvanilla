@@ -29,7 +29,9 @@ CoroutineResult LuaCoroutine::RunCoroutine(const std::vector<std::string>& args)
 		if (result.valid())
 			return result;
 
-		DebugStackTrace(result.lua_state(), sol::stack::get<std::optional<std::string>>(result.lua_state(), result.stack_index()).value_or("nil").c_str());
+		std::string message = sol::stack::get<std::optional<std::string>>(result.lua_state(), result.stack_index()).value_or("nil");
+
+		DebugStackTrace(result.lua_state(), message.c_str());
 		result.abandon();
 	}
 	catch (const sol::error& ex)
@@ -72,7 +74,7 @@ bool LuaCoroutine::CheckCondition(std::optional<sol::function>& func)
 	return false;
 }
 
-void LuaCoroutine::Delay(sol::object delayObj, sol::object conditionObj, sol::state_view s)
+void LuaCoroutine::Delay(sol::object delayObj, std::optional<sol::object> conditionObj, sol::state_view s)
 {
 	using namespace std::chrono_literals;
 
@@ -107,7 +109,9 @@ void LuaCoroutine::Delay(sol::object delayObj, sol::object conditionObj, sol::st
 	if (delay_int.has_value())
 	{
 		uint64_t delay_ms = std::max(0ms, std::chrono::milliseconds(*delay_int)).count();
-		std::optional<sol::function> condition = conditionObj.as<std::optional<sol::function>>();
+		std::optional<sol::function> condition;
+		if (conditionObj)
+			condition = conditionObj->as<std::optional<sol::function>>();
 
 		SetDelay(delay_ms + MQGetTickCount64(), condition);
 	}
