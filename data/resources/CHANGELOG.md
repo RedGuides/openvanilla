@@ -1,4 +1,17 @@
-Oct18, 2023:
+Nov 7, 2023:
+- Added support for datatypes implemented in lua scripts. This includes support
+  for lua tables in lua datatypes. See examples and definitions for details.
+  Detailed documentation coming soon. (#716)
+- Added preliminary support for actors in c++ plugins. (#674)
+- Exposed ConsoleWidget to c++ and lua (see definitions for details)
+- lua: Added Set helper class (#770)
+
+Oct 21, 2023:
+- tlo: Add Inventory TLO (currently only has the Bank datatype)
+- Inventory.Bank has members: BagSlots, FreeSlots, TotalSlots, and each currency
+- See https://docs.macroquest.org/reference/top-level-objects/tlo-inventory/
+
+Oct 18, 2023:
 - live: Updated for latest patch
 - live: Additional servers that are no longer flagged as truebox are now supported
 
