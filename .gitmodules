@@ -250,3 +250,19 @@
 [submodule "plugins/MQ2GMCheck"]
 	path = plugins/MQ2GMCheck
 	url = https://github.com/MMOBugs/MQ2GMCheck.git
+[submodule "plugins/MQ2Ice"]
+	path = plugins/MQ2Ice
+	url = https://gitlab.com/redguides/plugins/MQ2Ice.git
+	branch = master
+[submodule "plugins/MQ2Targets"]
+	path = plugins/MQ2Targets
+	url = https://github.com/MMOBugs/MQ2Targets.git
+	branch = master
+[submodule "plugins/MQ2HeadShot"]
+	path = plugins/MQ2HeadShot
+	url = https://gitlab.com/redguides/plugins/MQ2HeadShot.git
+	branch = master
+[submodule "plugins/MQ2WinTitle"]
+	path = plugins/MQ2WinTitle
+	url = https://github.com/MMOBugs/MQ2WinTitle.git
+	branch = master
