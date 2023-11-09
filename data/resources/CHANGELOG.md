@@ -1,4 +1,6 @@
 Nov 8, 2023:
+- Fixed some issues with autologin
+- Fixed some crashes related to target window
 - test: Updated for latest patch
 
 Nov 7, 2023:
