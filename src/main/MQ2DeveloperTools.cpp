@@ -1928,8 +1928,304 @@ static CharacterDataInspector* s_characterDataInspector = nullptr;
 
 #pragma endregion
 
+#pragma region Engine Inspector
 
-#pragma region Character Data Inspector
+static const char* DeferModeToString(eDeferMode mode)
+{
+	switch (mode)
+	{
+	case cNonDeferred:
+		return "Non-Deferred";
+	case cDeferredWad:
+		return "Deferred (Wad)";
+	case cDeferredWadLoading:
+		return "Deferred - Loading (Wad)";
+	case cDeferredFile:
+		return "Deferred (File)";
+	case cDeferredFileLoading:
+		return "Deferred - Loading (File)";
+	case cDeferredForeground:
+		return "Deferred - Foreground";
+	case cDeferredError:
+		return "Deferred - Error";
+
+	default: return "Unknown";
+	}
+}
+
+static const char* TextureQualityToString(eBitmapTextureQuality quality)
+{
+	switch (quality)
+	{
+	case eBitmapTextureQualityInvalid: return "Invalid";
+	case eBitmapTextureQualityHigh: return "High";
+	case eBitmapTextureQualityMedium: return "Medium";
+	case eBitmapTextureQualityLow: return "Low";
+
+	default: return "Unknown";
+	}
+}
+
+static const char* TrackingTypeToString(int trackingType)
+{
+	switch (trackingType)
+	{
+	case 0: return "WLD";
+	case 1: return "WLD/PCLOUD";
+	case 2: return "EQG";
+	case 3: return "EQG/SMODEL";
+	case 4: return "EQG/HMODEL";
+	case 5: return "Particle";
+	case 6: return "Downsampled";
+	case -1:
+	default: return "Unknown";
+	}
+}
+
+class EngineInspector : public ImGuiWindowBase
+{
+public:
+	EngineInspector() : ImGuiWindowBase("Engine Inspector")
+	{
+		SetDefaultSize(ImVec2(800, 600));
+	}
+
+	~EngineInspector() override
+	{
+	}
+
+	bool IsEnabled() const override
+	{
+		return true;
+	}
+
+	void Draw()
+	{
+		ImVec2 availSize = ImGui::GetContentRegionAvail();
+		if (m_rightPaneSize == 0.0f)
+			m_rightPaneSize = availSize.x - m_leftPaneSize - 1;
+
+		imgui::DrawSplitter(false, 9.0f, &m_leftPaneSize, &m_rightPaneSize, 50, 250);
+
+		// Left Pane
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+			ImGui::BeginChild("TreeListView", ImVec2(m_leftPaneSize, ImGui::GetContentRegionAvail().y - 1), true);
+			ImGui::PopStyleVar();
+
+			const CEQGBitmap* pLastSelectedBitmap = m_selectedBitmap;
+			m_selectedBitmap = nullptr;
+
+			std::vector<std::vector<CEQGBitmap*>> bitmapsByPool;
+			bitmapsByPool.resize(eNumMemoryPoolManagerTypes);
+			{
+				CEQGBitmap* pEQBitmap = CEQGBitmap::GetFirstBitmap();
+				while (pEQBitmap != nullptr)
+				{
+					bitmapsByPool[pEQBitmap->m_eMemoryPoolManagerType].push_back(pEQBitmap);
+
+					if (pEQBitmap == pLastSelectedBitmap)
+						m_selectedBitmap = pEQBitmap;
+
+					pEQBitmap = pEQBitmap->GetNextBitmap();
+				}
+			}
+
+			//for (auto& bitmaps : bitmapsByPool)
+			//{
+			//	std::sort(bitmaps.begin(), bitmaps.end(),
+			//		[](CEQGBitmap* p1, CEQGBitmap* p2)
+			//		{
+			//			return mq::ci_less()(p1->m_pszFileName, p2->m_pszFileName);
+			//		});
+			//}
+
+			ImGuiTableFlags tableFlags = ImGuiTableFlags_ScrollY
+				| ImGuiTableFlags_BordersV
+				| ImGuiTableFlags_BordersOuterH
+				| ImGuiTableFlags_Resizable
+				| ImGuiTableFlags_RowBg;
+
+			if (ImGui::BeginTable("##eqgbitmaps", 2, tableFlags))
+			{
+				ImGui::TableSetupScrollFreeze(0, 1);
+				ImGui::TableSetupColumn("Index");
+				ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+				ImGui::TableHeadersRow();
+
+
+
+				for (int pool = 0; pool < bitmapsByPool.size(); ++pool)
+				{
+					auto& bitmaps = bitmapsByPool[pool];
+					EMemoryPoolManagerType poolType = static_cast<EMemoryPoolManagerType>(pool);
+
+					char label[64];
+					switch (poolType)
+					{
+					case eMemoryPoolManagerTypePersistent:
+						sprintf_s(label, "Pool: Persistent (%d)", static_cast<int>(bitmaps.size()));
+						break;
+					case eMemoryPoolManagerTypeOnDemand:
+						sprintf_s(label, "Pool: On Demand (%d)", static_cast<int>(bitmaps.size()));
+						break;
+					case eMemoryPoolManagerTypeZone:
+						sprintf_s(label, "Pool: Zone (%d)", static_cast<int>(bitmaps.size()));
+						break;
+
+					default:
+						sprintf_s(label, "Other: %d (%d)", poolType, static_cast<int>(bitmaps.size()));
+						break;
+					}
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn();
+
+					if (ImGui::TreeNodeEx(reinterpret_cast<void*>(poolType), 0, "%s", label))
+					{
+						for (int i = 0; i < bitmaps.size(); ++i)
+						{
+							bool selectThis = false;
+							const CEQGBitmap* pEQBitmap = bitmaps[i];
+
+							ImGui::PushID(pEQBitmap);
+							ImGui::TableNextRow();
+							ImGui::TableNextColumn();
+
+							const bool selected = pEQBitmap == pLastSelectedBitmap;
+							ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanFullWidth
+								| ImGuiTreeNodeFlags_SpanAvailWidth
+								| ImGuiTreeNodeFlags_Leaf
+								| ImGuiTreeNodeFlags_NoTreePushOnOpen;
+							if (selected)
+							{
+								flags |= ImGuiTreeNodeFlags_Selected;
+							}
+
+							ImGui::TreeNodeEx(pEQBitmap, flags, "%d", i);
+
+							if (m_selectedBitmap == nullptr || ImGui::IsItemClicked())
+							{
+								m_selectedBitmap = pEQBitmap;
+							}
+
+							ImGui::TableNextColumn(); ImGui::Text("%s", pEQBitmap->m_pszFileName);
+							ImGui::PopID();
+						}
+
+						ImGui::TreePop();
+					}
+				}
+
+				ImGui::EndTable();
+			}
+
+			ImGui::EndChild();
+		}
+
+		ImGui::SameLine();
+
+		// Right Pane
+		{
+			ImVec2 rightPaneContentSize = ImGui::GetContentRegionAvail();
+			ImGui::BeginChild("ContentView", ImVec2(rightPaneContentSize.x, rightPaneContentSize.y - 1), true);
+
+			if (m_selectedBitmap)
+			{
+				const CEQGBitmap* pPrevious = m_selectedBitmap->GetPreviousBitmap();
+				ImGui::BeginDisabled(pPrevious == nullptr);
+				if (ImGui::Button("Prev") && pPrevious)
+					m_selectedBitmap = pPrevious;
+				ImGui::EndDisabled();
+
+				ImGui::SameLine();
+
+				const CEQGBitmap* pNext = m_selectedBitmap->GetNextBitmap();
+				ImGui::BeginDisabled(pNext == nullptr);
+				if (ImGui::Button("Next") && pNext)
+					m_selectedBitmap = pNext;
+				ImGui::EndDisabled();
+
+				const CEQGBitmap* pBitmap = m_selectedBitmap;
+
+				const char* typeLabel = "Unknown";
+				switch (pBitmap->m_eType)
+				{
+				case eBitmapTypeNormal: typeLabel = "Normal"; break;
+				case eBitmapTypeLayer: typeLabel = "Layer"; break;
+				case eBitmapTypeSingleDetail: typeLabel = "Single Detail"; break;
+				case eBitmapTypePaletteDetailMain: typeLabel = "Palette Detail - Main"; break;
+				case eBitmapTypePaletteDetailPalette: typeLabel = "Palette Detail - Palette"; break;
+				case eBitmapTypePaletteDetailDetail: typeLabel = "Palette Detail - Detail"; break;
+				default: break;
+				}
+				ImGui::Text("Bitmap Type: %s", typeLabel);
+
+				const char* memoryPoolLabel = "Unknown";
+				switch (pBitmap->m_eMemoryPoolManagerType)
+				{
+				case eMemoryPoolManagerTypePersistent: memoryPoolLabel = "Persistent"; break;
+				case eMemoryPoolManagerTypeOnDemand: memoryPoolLabel = "On Demand"; break;
+				case eMemoryPoolManagerTypeZone: memoryPoolLabel = "Zone"; break;
+				default: break;
+				}
+				ImGui::Text("Memory Pool: %s", memoryPoolLabel);
+
+				ImGui::Text("File Name: %s", pBitmap->m_pszFileName);
+				ImGui::Text("Size: %d x %d", pBitmap->m_uWidth, pBitmap->m_uHeight);
+				ImGui::Text("Source Size: %d x %d", pBitmap->m_uSourceWidth, pBitmap->m_uSourceHeight);
+
+				ImGui::Text("Has Texture: %s", pBitmap->m_bHasTexture ? "Yes" : "No");
+				ImGui::Text("Object Index: %d", pBitmap->m_uObjectIndex);
+				ImGui::Text("Distance Squared: %.2f", pBitmap->m_distanceSq);
+				ImGui::Text("Last Distance Time: %d", pBitmap->m_lastDistanceTime);
+				ImGui::Text("Last Render Time: %d", pBitmap->m_lastRenderTime);
+				ImGui::Text("Loaded Time: %d", pBitmap->m_loadedTime);
+				ImGui::Text("Defer Mode: %s", DeferModeToString(pBitmap->m_eDeferMode));
+				ImGui::Text("Defer Mode (original): %s", DeferModeToString(pBitmap->m_eOriginalDeferMode));
+				ImGui::Text("Deferred Filename: %s", pBitmap->m_DeferredFilename.c_str());
+
+				ImGui::Text("Texture Quality: %s", TextureQualityToString(pBitmap->m_eTextureQuality));
+				ImGui::Text("Can Reclaim: %s", pBitmap->m_canReclaim ? "Yes" : "No");
+				ImGui::Text("Tracking Type: %s", TrackingTypeToString(pBitmap->m_nTrackingType));
+
+				ImTextureID TexID = pBitmap->GetTexture();
+				if (TexID != nullptr)
+				{
+					ImGui::Separator();
+
+					bool drawBorder = true;
+					ImVec2 minUV = ImVec2(0, 0);
+					ImVec2 maxUV = ImVec2(1, 1);
+					ImVec2 textureSize = ImVec2(static_cast<float>(pBitmap->m_uWidth),
+						static_cast<float>(pBitmap->m_uHeight));
+
+					ImVec2 imageSize = textureSize;
+
+					ImGui::Image(
+						TexID, imageSize,
+						minUV, maxUV,
+						ImVec4(1, 1, 1, 1),
+						drawBorder ? ImVec4(1, 1, 1, 0.5f) : ImVec4()
+					);
+				}
+			}
+
+			ImGui::EndChild();
+		}
+	}
+
+private:
+	float m_leftPaneSize = 150.0f; // initial size of left column
+	float m_rightPaneSize = 0.0f;  // size of right column. Initial value calculated from left.
+	const CEQGBitmap* m_selectedBitmap = nullptr;
+};
+
+static EngineInspector* s_engineInspector = nullptr;
+
+#pragma endregion
+
+#pragma region EverQuest Data Inspector
 
 class EverQuestDataInspector : public ImGuiWindowBase
 {
@@ -2301,6 +2597,97 @@ public:
 				ImGui::TableNextColumn(); ImGui::Text("ItemPlacementDefaultModeCursor");
 				ImGui::TableNextColumn(); ImGui::Text("%d", eq.gOpt.itemPlacementDefaultModeCursor);
 
+
+				ImGui::TreePop();
+			}
+
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			if (ImGui::TreeNode("Server"))
+			{
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Ruleset");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.Ruleset);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Rp Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##RpServer", &eq.bRpServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Accelerated Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##AccelServer", &eq.bAcceleratedServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Progression Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##ProgServer", &eq.bProgressionServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Progression Expansions");
+				ImGui::TableNextColumn(); ImGui::Text("%08x", eq.ProgressionOpenExpansions);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Heroic Flag");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.bHeroicCharacterFlag);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Progression Level Cap");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.ProgressionLevelCap);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Dev Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##DevServer", &eq.bIsDevServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Beta Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##BetaServer", &eq.bIsBetaServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Test Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##TestServer", &eq.bIsTestServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Staging Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##StageServer", &eq.bIsStageServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Mail System");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##MailSystem", &eq.bUseMailSystem);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Escape Server");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##EscServer", &eq.bIsEscapeServer);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Tutorial Enabled");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##Tutorial", &eq.bIsTutorialEnabled);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Heroic Character Related");
+				ImGui::TableNextColumn(); ImGui::Text("%d", (int32_t)eq.bHeroicCharacterRelated);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Head Start Char");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##HeadStart", &eq.bCanCreateHeadStartCharacter);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Heroic Char");
+				ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1); ImGui::Checkbox("##HeroicChar", &eq.bCanCreateHeroicCharacter);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Monthly Claim");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.nMonthlyClaim);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Marketplace Related");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.MarketPlaceRelated);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Heroic 85 Slots");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.Heroic85Slots);
+
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn(); ImGui::Text("Heroic 100 Slots");
+				ImGui::TableNextColumn(); ImGui::Text("%d", eq.Heroic100Slots);
 
 				ImGui::TreePop();
 			}
@@ -3023,12 +3410,12 @@ class SpellsInspector : public ImGuiWindowBase
 {
 	CTextureAnimation* m_pTASpellIcon = nullptr;
 public:
-	SpellsInspector() : ImGuiWindowBase("Spells Developer Tools")
+	SpellsInspector() : ImGuiWindowBase("Spells & Buffs Developer Tools")
 	{
 		SetDefaultSize(ImVec2(700, 400));
 	}
 
-	~SpellsInspector()
+	~SpellsInspector() override
 	{
 		if (m_pTASpellIcon)
 		{
@@ -3037,7 +3424,7 @@ public:
 		}
 	}
 
-	void DoSpellBuffTableHeaders()
+	static void DoSpellBuffTableHeaders()
 	{
 		ImGui::TableSetupColumn("Index");
 		ImGui::TableSetupColumn("Icon");
@@ -3089,10 +3476,6 @@ public:
 		ImGui::TableNextColumn();
 		m_pTASpellIcon->SetCurCell(spell->SpellIcon);
 		imgui::DrawTextureAnimation(m_pTASpellIcon);
-		//m_pTASpellIcon->SetCurCell(spell->GemIcon);
-		//RenderTextureAnimation(m_pTASpellIcon);
-		//m_pTASpellIcon->SetCurCell(spell->BookIcon);
-		//RenderTextureAnimation(m_pTASpellIcon);
 
 		// Name
 		ImGui::TableNextColumn();
@@ -3107,9 +3490,13 @@ public:
 
 		if (ImGui::BeginPopupContextItem("BuffContextMenu"))
 		{
-			if (ImGui::Selectable("Inspect (NYI)"))
+			if (ImGui::Selectable("Inspect"))
 			{
-				// TODO: trigger spell/buff viewer
+				char buffer[512] = { 0 };
+				FormatSpellLink(buffer, 512, spell);
+
+				TextTagInfo info = ExtractLink(buffer);
+				ExecuteTextLink(info);
 			}
 
 			ImGui::Separator();
@@ -3238,8 +3625,71 @@ public:
 		return count;
 	}
 
+	static void FormatBuffDuration(char* timeLabel, size_t size, int buffTimer)
+	{
+		if (buffTimer < 0)
+		{
+			strcpy_s(timeLabel, size, "Permanent");
+		}
+		else if (buffTimer > 0)
+		{
+			int hours = 0;
+			int minutes = 0;
+			int seconds = 0;
+
+			int totalSeconds = buffTimer / 1000;
+
+			if (totalSeconds > 0)
+			{
+				hours = totalSeconds / 3600;
+				minutes = (totalSeconds % 3600) / 60;
+				seconds = totalSeconds % 60;
+			}
+
+			if (hours > 0)
+			{
+				if (minutes > 0 && seconds > 0)
+				{
+					sprintf_s(timeLabel, size, "%dh %dm %ds", hours, minutes, seconds);
+				}
+				else if (minutes > 0)
+				{
+					sprintf_s(timeLabel, size, "%dh %dm", hours, minutes);
+				}
+				else if (seconds > 0)
+				{
+					sprintf_s(timeLabel, size, "%dh %ds", hours, seconds);
+				}
+				else
+				{
+					sprintf_s(timeLabel, size, "%dh", hours);
+				}
+			}
+			else if (minutes > 0)
+			{
+				if (seconds > 0)
+				{
+					sprintf_s(timeLabel, size, "%dm %ds", minutes, seconds);
+				}
+				else
+				{
+					sprintf_s(timeLabel, size, "%dm", minutes);
+				}
+			}
+			else
+			{
+				sprintf_s(timeLabel, size, "%ds", seconds);
+			}
+		}
+		else
+		{
+			strcpy_s(timeLabel, size, "0s");
+		}
+	}
+
 	template <typename T>
-	void DoTargetBuffsTable(const char* name, const T* BuffWnd)
+	void DoBuffsTable(const char* name, IteratorRange<PlayerBuffInfoWrapper::Iterator<T>> Buffs,
+		bool petBuffs = false, bool playerBuffs = false, int baseIndex = 0)
 	{
 		ImGuiTableFlags tableFlags = 0
 			| ImGuiTableFlags_SizingFixedFit
@@ -3252,25 +3702,21 @@ public:
 		{
 			ImGui::TableSetupScrollFreeze(2, 1);
 			
-			ImGui::TableSetupColumn("Index");
-			ImGui::TableSetupColumn("Icon");
+			ImGui::TableSetupColumn("Index", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+			ImGui::TableSetupColumn("Icon", ImGuiTableColumnFlags_WidthFixed, 24.0f);
 			ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-			ImGui::TableSetupColumn("ID");
-			ImGui::TableSetupColumn("Duration");
+			ImGui::TableSetupColumn("Spell ID", ImGuiTableColumnFlags_WidthFixed, 46.0f);
+			ImGui::TableSetupColumn("Duration", ImGuiTableColumnFlags_WidthFixed, 78.0f);
 			ImGui::TableSetupColumn("Caster", ImGuiTableColumnFlags_WidthStretch);
 			ImGui::TableHeadersRow();
 
-			int i = 0;
-			uint32_t currentTime = EQGetTime();
-
-			for (int i = 0; i < BuffWnd->GetMaxBuffs(); ++i)
+			for (const auto& buffInfo : Buffs)
 			{
-				PlayerBuffInfoRef buff = BuffWnd->GetBuffInfo(i);
-				EQ_Spell* spell = GetSpellByID(buff.GetSpellID());
+				EQ_Spell* spell = buffInfo.GetSpell();
 				if (!spell)
 					continue;
 
-				ImGui::PushID(i);
+				ImGui::PushID(buffInfo.GetIndex());
 
 				if (!m_pTASpellIcon)
 				{
@@ -3283,7 +3729,7 @@ public:
 
 				// Index
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", i);
+				ImGui::Text("%d", buffInfo.GetIndex() + 1 + baseIndex);
 
 				// Icon
 				ImGui::TableNextColumn();
@@ -3304,75 +3750,64 @@ public:
 					ImGui::Text("");
 				}
 
+				if (spell)
+				{
+					if (ImGui::BeginPopupContextItem("BuffContextMenu"))
+					{
+						if (ImGui::Selectable("Inspect"))
+						{
+							char buffer[512] = { 0 };
+							FormatSpellLink(buffer, 512, spell);
+
+							TextTagInfo info = ExtractLink(buffer);
+							ExecuteTextLink(info);
+						}
+
+						if (petBuffs)
+						{
+							ImGui::Separator();
+
+							if (ImGui::Selectable("Remove Pet Buff"))
+							{
+								RemovePetBuffByName(spell->Name);
+							}
+						}
+						else if (playerBuffs)
+						{
+							if (ImGui::Selectable("Remove by Index"))
+							{
+								RemoveBuffByIndex(buffInfo.GetIndex() + baseIndex);
+							}
+
+							if (ImGui::Selectable("Remove by Name"))
+							{
+								RemoveBuffByName(spell->Name);
+							}
+
+							if (ImGui::Selectable("Remove by Spell ID"))
+							{
+								RemoveBuffBySpellID(buffInfo.GetSpellID());
+							}
+						}
+
+						ImGui::EndPopup();
+					}
+				}
+
 				// ID
 				ImGui::TableNextColumn();
-				ImGui::Text("%d", buff.GetSpellID());
+				ImGui::Text("%d", buffInfo.GetSpellID());
 
 				// Duration
 				ImGui::TableNextColumn();
-				int buffTimer = buff.GetBuffTimer();
-				if (buffTimer == -1)
-				{
-					ImGui::Text("Permanent");
-				}
-				else
-				{
-					int hours = 0;
-					int minutes = 0;
-					int seconds = 0;
 
-					int totalSeconds = buffTimer / 1000;
-
-					if (totalSeconds > 0)
-					{
-						hours = totalSeconds / 3600;
-						minutes = (totalSeconds % 3600) / 60;
-						seconds = totalSeconds % 60;
-					}
-
-					char timeLabel[64];
-
-					if (hours > 0)
-					{
-						if (minutes > 0 && seconds > 0)
-						{
-							sprintf_s(timeLabel, "%dh %dm %ds", hours, minutes, seconds);
-						}
-						else if (minutes > 0)
-						{
-							sprintf_s(timeLabel, "%dh %dm", hours, minutes);
-						}
-						else if (seconds > 0)
-						{
-							sprintf_s(timeLabel, "%dh %ds", hours, seconds);
-						}
-						else
-						{
-							sprintf_s(timeLabel, "%dh", hours);
-						}
-					}
-					else if (minutes > 0)
-					{
-						if (seconds > 0)
-						{
-							sprintf_s(timeLabel, "%dm %ds", minutes, seconds);
-						}
-						else
-						{
-							sprintf_s(timeLabel, "%dm", minutes);
-						}
-					}
-					else
-					{
-						sprintf_s(timeLabel, "%ds", seconds);
-					}
-
-					ImGui::Text("%s", timeLabel);
-				}
+				char timeLabel[64];
+				FormatBuffDuration(timeLabel, 64, buffInfo.GetBuffTimer());
+				ImGui::Text("%s", timeLabel);
 
 				// Caster
 				ImGui::TableNextColumn();
-				ImGui::Text("%s", buff.GetCaster());
+				ImGui::Text("%s", buffInfo.GetCaster());
 
 				ImGui::PopID();
 			}
@@ -3513,12 +3948,29 @@ public:
 			}
 
 			char szLabel[64];
-			sprintf_s(szLabel, "Spell Buffs (%d)###SpellBuffs", count);
 
-			if (ImGui::BeginTabItem(szLabel))
+			if (pBuffWnd)
 			{
-				DoSpellAffectTable("SpellAffectBuffsTable", std::begin(pcProfile->Buffs), std::end(pcProfile->Buffs), arrayLength);
-				ImGui::EndTabItem();
+				sprintf_s(szLabel, "Buffs (%d)###Buffs", pBuffWnd->GetTotalBuffCount());
+
+				if (ImGui::BeginTabItem(szLabel))
+				{
+					DoBuffsTable("BuffsTable", pBuffWnd->GetBuffRange(), false, true, pBuffWnd->firstEffectSlot);
+
+					ImGui::EndTabItem();
+				}
+			}
+
+			if (pSongWnd)
+			{
+				sprintf_s(szLabel, "Short Buffs (%d)###ShortBuffs", pSongWnd->GetTotalBuffCount());
+
+				if (ImGui::BeginTabItem(szLabel))
+				{
+					DoBuffsTable("ShortBuffsTable", pSongWnd->GetBuffRange(), false, true, pSongWnd->firstEffectSlot);
+
+					ImGui::EndTabItem();
+				}
 			}
 
 			if (pPetInfoWnd)
@@ -3527,7 +3979,7 @@ public:
 
 				if (ImGui::BeginTabItem(szLabel))
 				{
-					DoTargetBuffsTable("PetBuffsTable", pPetInfoWnd.get());
+					DoBuffsTable("PetBuffsTable", pPetInfoWnd->GetBuffRange(), true);
 
 					ImGui::EndTabItem();
 				}
@@ -3539,7 +3991,7 @@ public:
 
 				if (ImGui::BeginTabItem(szLabel))
 				{
-					DoTargetBuffsTable("TargetBuffsTable", pTargetWnd.get());
+					DoBuffsTable("TargetBuffsTable", pTargetWnd->GetBuffRange(), false);
 
 					ImGui::EndTabItem();
 				}
@@ -3549,6 +4001,14 @@ public:
 			{
 				DoSpellStackingTests();
 
+				ImGui::EndTabItem();
+			}
+
+			sprintf_s(szLabel, "Spell Affects (%d)###SpellBuffs", count);
+
+			if (ImGui::BeginTabItem(szLabel))
+			{
+				DoSpellAffectTable("SpellAffectBuffsTable", std::begin(pcProfile->Buffs), std::end(pcProfile->Buffs), arrayLength);
 				ImGui::EndTabItem();
 			}
 
@@ -4949,14 +5409,17 @@ static void DeveloperTools_Initialize()
 	s_characterDataInspector = new CharacterDataInspector();
 	DeveloperTools_RegisterMenuItem(s_characterDataInspector, "Character Data", s_menuNameInspectors);
 
+	s_engineInspector = new EngineInspector();
+	DeveloperTools_RegisterMenuItem(s_engineInspector, "Engine Inspector", s_menuNameInspectors);
+
 	s_everquestDataInspector = new EverQuestDataInspector();
-	DeveloperTools_RegisterMenuItem(s_everquestDataInspector, "Everquest Data", s_menuNameInspectors);
+	DeveloperTools_RegisterMenuItem(s_everquestDataInspector, "EverQuest Data", s_menuNameInspectors);
 
 	s_realEstateInspector = new RealEstateInspector();
 	DeveloperTools_RegisterMenuItem(s_realEstateInspector, "Real Estate", s_menuNameInspectors);
 
 	s_spellsInspector = new SpellsInspector();
-	DeveloperTools_RegisterMenuItem(s_spellsInspector, "Spells", s_menuNameInspectors);
+	DeveloperTools_RegisterMenuItem(s_spellsInspector, "Spells & Buffs", s_menuNameInspectors);
 
 	s_switchInspector = new SwitchInspector();
 	DeveloperTools_RegisterMenuItem(s_switchInspector, "Switches", s_menuNameInspectors);
@@ -4991,6 +5454,12 @@ static void DeveloperTools_Shutdown()
 
 	DeveloperTools_UnregisterMenuItem(s_characterDataInspector);
 	delete s_characterDataInspector; s_characterDataInspector = nullptr;
+
+	DeveloperTools_UnregisterMenuItem(s_engineInspector);
+	delete s_engineInspector; s_engineInspector = nullptr;
+
+	DeveloperTools_UnregisterMenuItem(s_everquestDataInspector);
+	delete s_everquestDataInspector; s_everquestDataInspector = nullptr;
 
 	DeveloperTools_UnregisterMenuItem(s_realEstateInspector);
 	delete s_realEstateInspector; s_realEstateInspector = nullptr;

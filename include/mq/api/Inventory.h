@@ -14,18 +14,11 @@
 
 #pragma once
 
-#include "LuaCommon.h"
+#include "mq/base/Common.h"
 
-namespace mq::lua::bindings {
+namespace mq {
 
-void RegisterBindings_EQ(LuaThread* thread, sol::table& mq);
-void RegisterBindings_Globals(LuaThread* thread, sol::state_view sv);
-void RegisterBindings_MQ(LuaThread* thread, sol::table& mq);
-void RegisterBindings_ImGui(sol::state_view sv);
-void RegisterBindings_Bit32(sol::state_view sv);
+// Get the number of bank slots matching size
+MQLIB_API int GetBankSlotCount(int nSize, bool bEmptyOnly = false);
 
-void RegisterBindings_MQMacroData(sol::table& lua);
-void InitializeBindings_MQMacroData();
-void ShutdownBindings_MQMacroData();
-
-} // namespace mq::lua::bindings
+} // namespace mq
