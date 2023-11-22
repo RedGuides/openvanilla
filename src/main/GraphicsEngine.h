@@ -18,6 +18,8 @@
 #include "eqlib/BuildType.h"
 #include "MQ2Main.h"
 
+#include "GraphicsResources.h"
+
 #if HAS_DIRECTX_9
 #include <d3d9.h>
 #endif // HAS_DIRECTX_9
@@ -25,6 +27,11 @@
 #if HAS_DIRECTX_11
 #include <d3d11.h>
 #endif // HAS_DIRECTX_11
+
+namespace eqlib
+{
+	struct BMI;
+}
 
 namespace mq {
 
@@ -184,7 +191,6 @@ namespace engine {
 void Initialize();
 void Shutdown();
 
-
 void ImGuiRenderDebug_UpdateImGui();
 void OnUpdateFrame();
 
@@ -214,6 +220,7 @@ MQLIB_VAR eqlib::Direct3DDevice9* gpD3D9Device;
 
 #if HAS_DIRECTX_11
 MQLIB_VAR IDXGISwapChain* gpDXGISwapChain;
+MQLIB_VAR ID3D11Device* gpD3D11Device;
 #endif
 
 MQLIB_VAR bool gbDeviceAcquired;
