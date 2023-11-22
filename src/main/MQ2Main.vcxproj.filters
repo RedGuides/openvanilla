@@ -66,6 +66,9 @@
     <Filter Include="Source Files\api">
       <UniqueIdentifier>{eab18ae6-9d25-410f-a584-982be8ed8523}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\mq\libutils">
+      <UniqueIdentifier>{8d2cbb0c-fca3-43c8-80cb-8aa3122e460e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MQ2AutoInventory.cpp">
@@ -392,6 +395,9 @@
     <ClCompile Include="datatypes\MQInventoryType.cpp">
       <Filter>Source Files\datatypes</Filter>
     </ClCompile>
+    <ClCompile Include="GraphicsResources.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MQ2Commands.h">
@@ -599,6 +605,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\mq\api\Inventory.h">
+      <Filter>Header Files\mq\api</Filter>
+    </ClInclude>
+    <ClInclude Include="GraphicsResources.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\mq\api\Textures.h">
       <Filter>Header Files\mq\api</Filter>
     </ClInclude>
   </ItemGroup>
