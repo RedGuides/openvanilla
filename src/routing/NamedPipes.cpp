@@ -15,8 +15,7 @@
 // Uncomment to see super spammy read/write trace logging
 //#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 
-#include "common/NamedPipes.h"
-#include "common/NamedPipesProtocol.h"
+#include "NamedPipes.h"
 #include "common/Common.h"
 #include "mq/base/WString.h"
 
@@ -49,6 +48,16 @@ PipeMessage::PipeMessage(MQMessageId messageId, const void* data, size_t length)
 PipeMessage::PipeMessage(const MQMessageHeader& header, const void* data, size_t length)
 {
 	Init(header, data, length);
+}
+
+PipeMessage::PipeMessage(const PipeMessage& message, const void* data, size_t length)
+{
+	if (message.m_header)
+		Init(*message.m_header, data, length);
+	else
+		Init(message.GetMessageId(), data, length);
+
+	SetConnection(message.m_connection.lock());
 }
 
 PipeMessage::~PipeMessage()
@@ -267,9 +276,12 @@ void PipeConnection::InternalBeginRead()
 
 	if (!readStarted)
 	{
-		SPDLOG_ERROR("{} connectionId={}",
-			fmt::windows_error(GetLastError(), "Failed at ::ReadFileEx").what(), m_connectionId);
-		m_parent->CloseConnection(this);
+		auto error = GetLastError();
+		if(error != ERROR_MORE_DATA) {
+			SPDLOG_ERROR("{} connectionId={}",
+				fmt::windows_error(error, "Failed at ::ReadFileEx").what(), m_connectionId);
+			m_parent->CloseConnection(this);
+		}
 	}
 }
 
@@ -331,11 +343,12 @@ void PipeConnection::HandleReadComplete(uint32_t errorCode, uint32_t bytesRead)
 
 	case ERROR_INSUFFICIENT_BUFFER:
 	case ERROR_SUCCESS:
+	case ERROR_MORE_DATA:
 		// Store the data in our buffers, and try to read more. If we've got all the
 		// data we need we can process it right after the next call to ReadFileEx.
 		m_readBuffers.emplace_back(std::move(m_readBuffer), bytesRead);
 
-		if (!moreData)
+		if (!moreData && errorCode != ERROR_MORE_DATA)
 		{
 			ProcessBuffers();
 		}
@@ -386,9 +399,10 @@ void PipeConnection::SendMessageWithResponse(PipeMessagePtr&& message,
 
 	m_parent->PostToPipeThread([message = message.release(), callback, weakPtr, parent]() mutable
 		{
-			auto msg = std::unique_ptr<PipeMessage>(message);
 			if (auto ptr = weakPtr.lock())
 			{
+				auto msg = std::unique_ptr<PipeMessage>(message);
+				msg->SetRequestMode(MQRequestMode::CallAndResponse);
 				ptr->InternalSendMessage(std::move(msg), callback);
 			}
 			else
@@ -543,7 +557,7 @@ void PipeConnection::InternalReceiveMessage(PipeMessagePtr&& message)
 {
 	message->SetConnection(shared_from_this());
 
-	if (message->GetHeader()->mode == MQRequestMode::MessageReply)
+	if (message->GetRequestMode() == MQRequestMode::MessageReply)
 	{
 		// Check if sequence id is in our map
 		auto iter = m_rpcRequests.find(message->GetHeader()->sequenceId);
@@ -555,12 +569,14 @@ void PipeConnection::InternalReceiveMessage(PipeMessagePtr&& message)
 
 			m_parent->PostToMainThread([callback, message = message.release()]() mutable
 				{
-					callback(message->GetHeader()->status, std::unique_ptr<PipeMessage>(message));
+					callback(static_cast<int8_t>(message->GetHeader()->status), std::unique_ptr<PipeMessage>(message));
 				});
+
 			return;
 		}
 	}
 
+	// if we get here with a reply, we didn't have a callback -- so it needs to be routed
 	m_parent->DispatchMessage(std::move(message));
 }
 
