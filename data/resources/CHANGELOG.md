@@ -1,3 +1,14 @@
+Dec 5, 2023:
+- live: Updated for latest expansion
+
+Dec 4, 2023:
+- test: Fix ZoneGuide
+- Add Me.PersonaLevel - takes class shortname as param, returns level of that class persona.
+  e.g. ${Me.PersonaLevel[DRU]} returns level of druid class persona.
+
+Dec 2, 2023:
+- test: Updated for latest patch
+
 Nov 28, 2023:
 - Actors are now live for use in plugins, see https://docs.macroquest.org/plugins/developing/actors/
 - Actors are also now live for use in lua scripts, see examples/buffbeg.lua for example usage.
