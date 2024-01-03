@@ -1,53 +1,62 @@
 # Open Vanilla
 
-Open Vanilla is a compilation of multi-boxing software for EverQuest. It's based on [MacroQuest](https://gitlab.com/macroquest/), with plugins and ❤️ from the [RedGuides community](https://www.redguides.com). 
+Open Vanilla is a compilation of multi-boxing software for EverQuest, nearly all based on [MacroQuest](https://github.com/macroquest/macroquest) with plugins and effort from the [RedGuides community](https://www.redguides.com). 
+
 ### Not a gnome? ⚙️
-The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com/community/resources/redguides-launcher.1255/) is available for contributors and subscribers. If you'd rather tinker, read on!
+The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com/community/resources/redguides-launcher.1255/) is available for contributors and subscribers. If you're here to tinker, read on!
 
----
-## Build
+## How To Build
 
-### Prerequisites
+Building Open Vanilla is the same as MacroQuest, the only difference is that you'll be using `src/OpenVanilla.sln` rather than `src/MacroQuest.sln`
+
+### Prererequisites
 
 * [Visual Studio 2022 Community](https://visualstudio.microsoft.com/downloads/)
 * [Git for Windows](https://git-scm.com/)
 
-### Prepare for build
+### Check out the latest source code
 
-1) Clone the repository with this line, (newest version of Git required)
+Create the checkout. This will create the subfolder **openvanilla** that contains a copy of the project.
 
-> ```git clone --recurse-submodules -j8 https://gitlab.com/redguides/openvanilla.git```
+```
+git clone https://github.com/RedGuides/openvanilla.git
+```
 
- <details>
-   <summary>Alternate: Test Server</summary>
+Make sure that submodules are initialized. Move (cd) to the newly created **openvanilla** folder before executing this command.  If you have run this step already, you can skip it
+```
+git submodule init
+```
 
-1) Clone the repository with this line, (newest version of Git required)
-> ```git clone --recurse-submodules -j8 -b testserver https://gitlab.com/redguides/openvanilla.git```
-</details>
-&nbsp;
-
-### Build Steps
-
-1. Open the `OpenVanilla.sln` file in /src
-1. Select the `Release` configuration from the drop-down menu near the top of the window
-1. Select the `x64` configuration from the nearby drop-down
-1. Select `Build -> Build Solution` from the menu.
-
-The built files will be placed in `build/bin/Release`. To start MacroQuest, run `MacroQuest.exe`. This will launch the application to the tray, and inject MacroQuest into any running EverQuest processes. 
-
-You're ready to play! If you're new to multi-boxing, watch our [video series](https://www.redguides.com/community/resources/multiboxing-everquest-the-red-guide-videos.1603/).
+Update the submodules to the correct version. Ensure you are in the newly created **openvanilla** folder before executing this command.
+```
+git submodule update
+```
 
 ### Updating an existing checkout
 
-Updates are frequent, and are required after an EverQuest patch. Before you build, grab the latest source code.
+MacroQuest is updated often, especially after a patch. Make sure before you build that you have the latest source code for MacroQuest and all of its dependencies.
 
-If you already have the source, it's a good idea to make sure that you pull all the latest changes.
->```git pull --rebase```
+If you already have the source, it is a good idea to make sure that you pull all the latest changes.
+```
+git pull --rebase
+```
 
 Update submodules. This ensures that dependencies have the latest code.
->```git submodule update```
+```
+git submodule update
+```
 
-You're now ready to follow the build steps again.
+At this point, the source should be ready to compile. Proceed to building.
+
+### Build Steps
+
+1. Open the `OpenVanilla.sln` file in src.
+2. Select the `Release` configuration from the drop-down menu near the top of the window, and choose between Win32 and x64.
+   1. If you're building for official servers, select `x64`
+   2. If you're building for emulated servers, select ``Win32``
+3. Select `Build -> Build Solution` from the menu.
+
+The built files will be placed in `build/bin/Release`. To start MacroQuest, run `MacroQuest.exe`. This will launch the application to the tray, and install MacroQuest into any running EverQuest processes.
 
 ### Adding Your Own Plugins
 
@@ -71,7 +80,3 @@ include     | Public header files that are used for building MacroQuest and plug
 plugins     | This folder is reserved for you to add your own personal plugins.
 src         | The source code for MacroQuest and its core plugins.
 tools       | Source code and additional tools that are used for MacroQuest development, but not part of the main project.
-
-### Additional files of interest
-
-**plugins/mkplugin.exe** Generates a new plugin from the template. Use this when creating a new plugin, or when converting an existing plugin from legacy MacroQuest.
