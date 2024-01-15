@@ -1,3 +1,15 @@
+Jan 14, 2024:
+- test: Updated for latest patch
+
+Jan 11, 2024:
+- Prospective fix for map crash (#798)
+- PackageMan now accepts the debug parameter (see docs)
+- luarocks cache has been moved to the modules folder
+
+Jan 8, 2024:
+- Fix clipping of ImGuiConsole, add opacity. (#805)
+- Fix Window.SetText correctly sending change event.
+
 Dec 18, 2023:
 - Update ImGui to 1.90
 - Update ImPlot to 0.17
