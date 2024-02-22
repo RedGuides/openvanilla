@@ -86,6 +86,8 @@ bool gCrashPadInitialized = false;
 std::map<std::tuple<uint16_t, uint16_t>, HWND> hotkeyMap;
 uint32_t gFocusProcessID = 0;
 
+static uint32_t s_taskbarRestart = 0;
+
 //----------------------------------------------------------------------------
 
 #pragma region Console & Logging
@@ -660,6 +662,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 			}
 			break;
 		}
+		if (MSG == s_taskbarRestart)
+		{
+			Shell_NotifyIcon(NIM_ADD, &NID);
+		}
 	}
 
 	return DefWindowProc(hWnd, MSG, wParam, lParam);
@@ -705,7 +711,7 @@ void ShowMacroQuestInfo()
 
 	ImGui::Bullet(); link("MacroQuest Website", "https://macroquest.org");
 	ImGui::Bullet(); link("MacroQuest Documentation", "https://docs.macroquest.org/");
-	ImGui::Bullet(); link("MacroQuest on Github", "https://github.com/macroquest/macroquest");
+	ImGui::Bullet(); link("MacroQuest on GitHub", "https://github.com/macroquest/macroquest");
 }
 
 void ShowMacroQuestMenu()
@@ -856,6 +862,8 @@ void InitializeWindows()
 	NID.uFlags = NIF_TIP | NIF_ICON | NIF_MESSAGE;
 	Shell_NotifyIcon(NIM_ADD, &NID);
 
+	s_taskbarRestart = ::RegisterWindowMessageW(L"TaskbarCreated");
+
 	LauncherImGui::AddMainPanel("MacroQuest Info", ShowMacroQuestInfo);
 	LauncherImGui::AddContextGroup("##MacroQuest", ShowMacroQuestMenu);
 }
@@ -964,6 +972,7 @@ int WINAPI CALLBACK WinMain(
 		// Only need this if we're not already the spawned process
 		else if (!spawnedProcess && ci_find_substr(thisArg, "spawnedprocess") != -1)
 		{
+			SPDLOG_INFO("I am a spawned process");
 			spawnedProcess = true;
 		}
 	}
@@ -1027,6 +1036,8 @@ int WINAPI CALLBACK WinMain(
 			STARTUPINFO si = {};
 			wil::unique_process_information pi;
 
+			SPDLOG_INFO("Relaunching as spawned process");
+
 			if (CreateProcess(ProgramPath.string().c_str(), // Application Name - Null says use command line processor
 					&fullCommandLine[0], // Command line to run
 					nullptr,             // Process Attributes - handle not inheritable
@@ -1063,7 +1074,10 @@ int WINAPI CALLBACK WinMain(
 	// Make sure a MacroQuest instance isn't already running, if one is running, exit
 	HWND hWndRunning = FindWindow(gszWinClassName, gszWinName);
 	if (hWndRunning != nullptr)
+	{
+		SPDLOG_INFO("Closing because another window of class \"{}\" is open", gszWinClassName);
 		return 0;
+	}
 
 	const std::string cycleNextWindowKey = GetPrivateProfileString("MacroQuest", "CycleNextWindow", "", internal_paths::MQini);
 	const std::string cyclePrevWindowKey = GetPrivateProfileString("MacroQuest", "CyclePrevWindow", "", internal_paths::MQini);
