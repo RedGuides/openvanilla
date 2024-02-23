@@ -86,6 +86,8 @@ bool gCrashPadInitialized = false;
 std::map<std::tuple<uint16_t, uint16_t>, HWND> hotkeyMap;
 uint32_t gFocusProcessID = 0;
 
+static std::set<uint32_t> s_processIds;
+
 static uint32_t s_taskbarRestart = 0;
 
 //----------------------------------------------------------------------------
@@ -309,6 +311,18 @@ void SetForegroundWindowInternal(HWND hWnd)
 			ShowWindow(hWnd, SW_RESTORE);
 		}
 	}
+}
+
+void OnProcessAdded(uint32_t processId)
+{
+	s_processIds.insert(processId);
+	Inject(processId, 1s);
+}
+
+void OnProcessRemoved(uint32_t processId)
+{
+	AutoLoginRemoveProcess(processId);
+	s_processIds.erase(processId);
 }
 
 LRESULT HandleHotkey(WPARAM wParam, LPARAM lParam)
@@ -637,11 +651,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 		break;
 
 	case WM_USER_PROCESS_ADDED:
-		Inject((DWORD)wParam, 1s);
+		OnProcessAdded(static_cast<uint32_t>(wParam));
 		break;
 
 	case WM_USER_PROCESS_REMOVED:
-		AutoLoginRemoveProcess((DWORD)wParam);
+		OnProcessRemoved(static_cast<uint32_t>(wParam));
 		break;
 
 	case WM_USER_CALLBACK:
@@ -671,37 +685,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 	return DefWindowProc(hWnd, MSG, wParam, lParam);
 }
 
+static void AddUnderline(ImColor color)
+{
+	ImVec2 min = ImGui::GetItemRectMin();
+	ImVec2 max = ImGui::GetItemRectMax();
+	min.y = max.y;
+	ImGui::GetWindowDrawList()->AddLine(min, max, color, 1.f);
+}
+
+static void DrawTextLink(const std::string& label, const std::string& url)
+{
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
+	ImGui::Text(label.c_str());
+	ImGui::PopStyleColor();
+
+	if (ImGui::IsItemHovered())
+	{
+		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+		{
+			ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOW);
+		}
+		AddUnderline(ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
+		ImGui::SetTooltip(ICON_FA_LINK " Open in default browser\n%s", url.c_str());
+	}
+	else
+	{
+		AddUnderline(ImGui::GetStyle().Colors[ImGuiCol_Button]);
+	}
+}
+
 void ShowMacroQuestInfo()
 {
-	auto link = [](const std::string& label, const std::string& url)
-		{
-			auto add_underline = [](ImColor color)
-				{
-					ImVec2 min = ImGui::GetItemRectMin();
-					ImVec2 max = ImGui::GetItemRectMax();
-					min.y = max.y;
-					ImGui::GetWindowDrawList()->AddLine(min, max, color, 1.f);
-				};
-
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
-			ImGui::Text(label.c_str());
-			ImGui::PopStyleColor();
-
-			if (ImGui::IsItemHovered())
-			{
-				if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-				{
-					ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOW);
-				}
-				add_underline(ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
-				ImGui::SetTooltip(ICON_FA_LINK " Open in default browser\n%s", url.c_str());
-			}
-			else
-			{
-				add_underline(ImGui::GetStyle().Colors[ImGuiCol_Button]);
-			}
-		};
-
 	ImGui::Spacing();
 	if (mq::imgui::LargeTextFont != nullptr) ImGui::PushFont(mq::imgui::LargeTextFont);
 	ImGui::Text("MacroQuest Useful Links");
@@ -709,9 +723,77 @@ void ShowMacroQuestInfo()
 	ImGui::Separator();
 	ImGui::Spacing();
 
-	ImGui::Bullet(); link("MacroQuest Website", "https://macroquest.org");
-	ImGui::Bullet(); link("MacroQuest Documentation", "https://docs.macroquest.org/");
-	ImGui::Bullet(); link("MacroQuest on GitHub", "https://github.com/macroquest/macroquest");
+	ImGui::Bullet(); DrawTextLink("MacroQuest Website", "https://macroquest.org");
+	ImGui::Bullet(); DrawTextLink("MacroQuest Documentation", "https://docs.macroquest.org/");
+	ImGui::Bullet(); DrawTextLink("MacroQuest on GitHub", "https://github.com/macroquest/macroquest");
+}
+
+struct PidInfo
+{
+	const LoginInstance* inst;
+	const std::string* key;
+	bool running = false;
+};
+
+
+void ShowProcessInfo()
+{
+	auto& loadedInstances = GetLoadedInstances();
+
+	std::map<uint32_t, PidInfo> pidInstances;
+
+	for (uint32_t pid : s_processIds)
+	{
+		pidInstances[pid] = { nullptr, nullptr, true };
+	}
+
+	for (auto& [key, inst] : loadedInstances)
+	{
+		pidInstances[inst.PID] = { &inst, &key, pidInstances[inst.PID].running };
+	}
+
+	if (ImGui::BeginTable("##ProcessList", 7, ImGuiTableFlags_Resizable))
+	{
+		ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Running", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Server", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Character", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Profile Grp", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Hotkey", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupScrollFreeze(0, 1);
+		ImGui::TableHeadersRow();
+
+		for (auto& [pid, info] : pidInstances)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Text("%d", pid);
+
+			ImGui::TableNextColumn();
+			ImGui::Text("%s", info.running ? "Yes" : "No");
+
+			ImGui::TableNextColumn();
+			ImGui::Text("%s", info.key ? info.key->c_str() : "(none)");
+
+			if (info.inst)
+			{
+				ImGui::TableNextColumn();
+				ImGui::Text("%s", info.inst->Server.c_str());
+
+				ImGui::TableNextColumn();
+				ImGui::Text("%s", info.inst->Character.c_str());
+
+				ImGui::TableNextColumn();
+				ImGui::Text("%s", info.inst->ProfileGroup.value_or("").c_str());
+
+				ImGui::TableNextColumn();
+				ImGui::Text("%s", info.inst->Hotkey.value_or("").c_str());
+			}
+		}
+
+		ImGui::EndTable();
+	}
 }
 
 void ShowMacroQuestMenu()
@@ -865,6 +947,7 @@ void InitializeWindows()
 	s_taskbarRestart = ::RegisterWindowMessageW(L"TaskbarCreated");
 
 	LauncherImGui::AddMainPanel("MacroQuest Info", ShowMacroQuestInfo);
+	LauncherImGui::AddMainPanel("Processes", ShowProcessInfo);
 	LauncherImGui::AddContextGroup("##MacroQuest", ShowMacroQuestMenu);
 }
 
@@ -1088,6 +1171,9 @@ int WINAPI CALLBACK WinMain(
 	InitializeNamedPipeServer();
 	InitializeWindows();
 	InitializeAutoLogin();
+
+	auto pids = GetAllEqGameSessions();
+	s_processIds = { begin(pids), end(pids) };
 
 	auto pMonitorEvents = std::make_unique<MQ2ProcessMonitorEvents>();
 	StartProcessMonitor(pMonitorEvents.get());

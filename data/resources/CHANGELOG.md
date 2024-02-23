@@ -1,13 +1,15 @@
 Feb 23, 2024:
-- autologin: Fix ini import creating blank passwords when stationnames entries exist
-- autologin: Add right click option to Characters UI to add a character to a profile group
+- autologin: Fix ini import creating blank passwords when stationnames entries exist.
+- autologin: Add right click option to Characters UI to add a character to a profile group.
+- autologin: Fix process tracking for loaded profiles.
+- loader: Add process list to show processes currently being tracked.
 
 Feb 22, 2024:
 - live: updated for live patch
 - autologin: Profile context menus can now toggle their state with ctrl+click
 - autologin: Profile context menus now use a star instead of check mark. Functionality is the same.
 - autologin: Profiles can now be freely re-ordered independent of star state.
-- autologin: Increas default delay when launching multiple instances.
+- autologin: Increase default delay when launching multiple instances.
 - autologin: Various improvements to context menus (still have issues with loaded state...)
 - autologin: Add logged in indicators to UI
 
