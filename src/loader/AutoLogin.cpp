@@ -156,14 +156,20 @@ static const LoginInstance* StartInstance(ProfileRecord& profile)
 	// character is not loaded, so load it -- we can assume that it's not already running (with MQ anyway)
 	// because we got a list at startup of the current running instances
 	if (!profile.eqPath)
-		if (const auto path = login::db::GetEQPath(
-			profile.profileName, profile.serverName, profile.characterName))
+	{
+		if (const auto path = login::db::GetEQPath(profile.profileName, profile.serverName, profile.characterName))
 			profile.eqPath = *path;
+	}
+
+	if (!profile.eqPath && !profile.serverType.empty())
+	{
+		profile.eqPath = login::db::GetPathFromServerType(profile.serverType);
+	}
 
 	if (!profile.eqPath)
 	{
-		SPDLOG_ERROR("No eq_path found for {} : {} (profile group {})",
-		             profile.serverName, profile.characterName, profile.profileName);
+		SPDLOG_ERROR("No eq_path found for {} ({}) (profile group {})",
+			profile.characterName, profile.serverName, profile.profileName);
 	}
 	else
 	{
@@ -177,7 +183,7 @@ static const LoginInstance* StartInstance(ProfileRecord& profile)
 			const auto eqgame = fs::path{ *profile.eqPath } / "eqgame.exe";
 			if (std::error_code ec; !fs::exists(eqgame, ec))
 			{
-				SPDLOG_ERROR("eqgame.exe does not exist at {} : {}", *profile.eqPath, ec.message());
+				SPDLOG_ERROR("eqgame.exe does not exist at {}: {}", *profile.eqPath, ec.message());
 			}
 			else
 			{
@@ -267,7 +273,7 @@ void LaunchCleanSession()
 	const auto eqgame = fs::path{ GetEQRoot() } / "eqgame.exe";
 	if (std::error_code ec; !fs::exists(eqgame, ec))
 	{
-		SPDLOG_ERROR("eqgame.exe does not exist at {} : {}", GetEQRoot(), ec.message());
+		SPDLOG_ERROR("eqgame.exe does not exist at {}: {}", GetEQRoot(), ec.message());
 	}
 	else
 	{

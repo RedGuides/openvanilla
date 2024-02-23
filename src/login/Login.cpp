@@ -268,6 +268,9 @@ std::vector<ProfileGroup> LoadAutoLoginProfiles(const std::string& ini_file_name
 				record.serverName = key.substr(0, pos2);
 			}
 
+			if (record.characterName.empty() || record.accountName.empty() || record.serverName.empty())
+				continue;
+
 			profile_group.records.push_back(std::move(record));
 		}
 
@@ -294,6 +297,7 @@ std::vector<ProfileGroup> LoadAutoLoginProfiles(const std::string& ini_file_name
 		record.accountName = account;
 		record.serverType = server_type;
 		record.sortOrder = ++sortOrder;
+		record.accountPassword = password;
 
 		record.serverName = GetPrivateProfileString(section, "Server", "", ini_location);
 		record.characterName = GetPrivateProfileString(section, "Character", "", ini_location);
