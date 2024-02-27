@@ -14,10 +14,9 @@
 
 #pragma once
 
-#include <filesystem>
-
 #include "Login.pb.h"
 
+#include <filesystem>
 #include <optional>
 
 #ifdef _DEBUG
@@ -70,6 +69,14 @@ struct ProfileRecord
 			return true;
 
 		return a.sortOrder < b.sortOrder;
+	}
+
+	bool IsEquivalent(const ProfileRecord& other)
+	{
+		return profileName == other.profileName
+			&& serverName == other.serverName
+			&& accountName == other.accountName
+			&& characterName == other.characterName;
 	}
 };
 
@@ -360,4 +367,5 @@ Results<std::string> ListProfileGroupMatches(std::string_view search);
 void WriteProfileGroups(const std::vector<ProfileGroup>& groups, std::string_view eq_path);
 bool InitDatabase(const std::string& path);
 void ShutdownDatabase();
+
 } // namespace login::db
