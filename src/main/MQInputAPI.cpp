@@ -490,7 +490,7 @@ bool MouseToPlayer(PlayerClient* pPlayer, DWORD position, bool bClick)
 // Clicks the mouse button (calls EQ's mouse up commands)
 // Usage: /click left|right [<mouseloc>]
 // ***************************************************************************
-void Click(SPAWNINFO* pChar, char* szLine)
+void Click(PlayerClient* pChar, const char* szLine)
 {
 	// This check protects against many of the pointers in this function being uninitialized
 	if (GetGameState() != GAMESTATE_INGAME)
@@ -647,7 +647,7 @@ void Click(SPAWNINFO* pChar, char* szLine)
 // Moves the mouse
 // Usage: /mouseto <mouseloc>
 // ***************************************************************************
-void MouseTo(SPAWNINFO* pChar, char* szLine)
+void MouseTo(PlayerClient* pChar, const char* szLine)
 {
 	if (szLine && szLine[0])
 	{
