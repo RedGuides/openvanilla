@@ -160,7 +160,8 @@ MQLIB_API bool MoveMouse(int x, int y);
 MQLIB_API bool ClickMouseButton(int mouseButton); // Uses DirectInput to simulate a mouse click at the current mouse position.
 MQLIB_API bool MouseToPlayer(PlayerClient* pPlayer, DWORD position, bool bClick = false);
 MQLIB_API bool ClickMouseItem(const MQGroundSpawn& pGroundSpawn, bool left);
-   inline bool ClickMouseItem(SPAWNINFO* pChar, const MQGroundSpawn& pGroundSpawn, bool left) { return ClickMouseItem(pGroundSpawn, left); }
+inline bool ClickMouseItem(SPAWNINFO* pChar, const MQGroundSpawn& pGroundSpawn, bool left) { return ClickMouseItem(pGroundSpawn, left); }
+void MouseConsume(int mouseButton, bool pressed);
 
 /* UTILITIES */
 MQLIB_API void ConvertCR(char* Text, size_t LineLen);

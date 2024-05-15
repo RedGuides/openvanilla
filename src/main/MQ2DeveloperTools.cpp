@@ -2535,11 +2535,11 @@ public:
 
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn(); ImGui::Text("Mouse Buttons");
-				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(eq.MouseButtons, ", ")).c_str());
+				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(g_pDeviceInputProxy->mouse.CurrentClickState, ", ")).c_str());
 
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn(); ImGui::Text("Mouse Buttons Old");
-				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(eq.OldMouseButtons, ", ")).c_str());
+				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(g_pDeviceInputProxy->mouse.LastClickState, ", ")).c_str());
 
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn(); ImGui::Text("Right Handed Mouse");

@@ -265,8 +265,7 @@ bool ImGuiOverlay_HandleMouseEvent(int mouseButton, bool pressed)
 	if (consume && mouseButton < NUM_MOUSE_BUTTONS)
 	{
 		// Update EQ to act like we already handled this click
-		pEverQuestInfo->OldMouseButtons[mouseButton] = pressed;
-		pEverQuestInfo->MouseButtons[mouseButton] = pressed;
+		MouseConsume(mouseButton, pressed);
 	}
 
 	return consume;
