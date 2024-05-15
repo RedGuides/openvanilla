@@ -39,7 +39,7 @@ namespace mq {
 
 static void DeveloperTools_Initialize();
 static void DeveloperTools_Shutdown();
-static void DeveloperTools_SetGameState(DWORD gameState);
+static void DeveloperTools_SetGameState(int gameState);
 static void DeveloperTools_UpdateImGui();
 
 static MQModule s_developerToolsModule = {
@@ -5562,7 +5562,7 @@ void DeveloperTools_DrawMenu()
 			else
 			{
 				if (ImGui::MenuItem(entry.itemName.c_str(), nullptr, false))
-					EzCommand(entry.command.c_str());
+					DoCommand(entry.command.c_str(), false);
 			}
 		}
 	}
@@ -5607,7 +5607,7 @@ void DeveloperTools_UnregisterMenuItem(const char* itemName)
 
 void DeveloperTools_WindowInspector_Initialize();
 void DeveloperTools_WindowInspector_Shutdown();
-void DeveloperTools_WindowInspector_SetGameState(uint32_t gameState);
+void DeveloperTools_WindowInspector_SetGameState(int gameState);
 
 static void DeveloperTools_Initialize()
 {
@@ -5705,7 +5705,7 @@ static void DeveloperTools_Shutdown()
 	DeveloperTools_WindowInspector_Shutdown();
 }
 
-static void DeveloperTools_SetGameState(DWORD gameState)
+static void DeveloperTools_SetGameState(int gameState)
 {
 	DeveloperTools_WindowInspector_SetGameState(gameState);
 }

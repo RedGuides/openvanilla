@@ -16,9 +16,8 @@
 #include "GraphicsEngine.h"
 #include "ImGuiBackend.h"
 #include "ImGuiManager.h"
+#include "MQDetourAPI.h"
 #include "MQ2DeveloperTools.h"    // For DeveloperTools_WindowInspector_HandleClick
-
-#include "mq/base/Detours.h"
 
 #include <cfenv>
 
