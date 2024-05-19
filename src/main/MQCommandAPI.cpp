@@ -608,7 +608,9 @@ bool MQCommandAPI::AddCommand(std::string_view command, MQCommandHandler handler
 			return false;
 		}
 
-		if (compare < 0)
+		// We already filtered out exact matches that we don't want, so the only exact match that we
+		// can get now are for eq commands.
+		if (compare <= 0)
 		{
 			// insert here.
 			if (pLast)
@@ -742,7 +744,9 @@ bool MQCommandAPI::RemoveAlias(const std::string& shortCommand,
 	auto iter = m_aliases.find(shortCommand);
 	if (iter == m_aliases.end())
 	{
-		DebugSpew("Failed to remove alias \"%s\": this alias does not exist");
+		DebugSpew("Failed to remove alias \"%s\": this alias does not exist",
+			shortCommand.c_str());
+
 		return false;
 	}
 
