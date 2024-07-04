@@ -39,7 +39,7 @@ namespace mq {
 
 static void DeveloperTools_Initialize();
 static void DeveloperTools_Shutdown();
-static void DeveloperTools_SetGameState(DWORD gameState);
+static void DeveloperTools_SetGameState(int gameState);
 static void DeveloperTools_UpdateImGui();
 
 static MQModule s_developerToolsModule = {
@@ -2535,11 +2535,11 @@ public:
 
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn(); ImGui::Text("Mouse Buttons");
-				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(eq.MouseButtons, ", ")).c_str());
+				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(g_pDeviceInputProxy->mouse.CurrentClickState, ", ")).c_str());
 
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn(); ImGui::Text("Mouse Buttons Old");
-				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(eq.OldMouseButtons, ", ")).c_str());
+				ImGui::TableNextColumn(); ImGui::Text("%s", fmt::format("{}", fmt::join(g_pDeviceInputProxy->mouse.LastClickState, ", ")).c_str());
 
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn(); ImGui::Text("Right Handed Mouse");
@@ -2762,6 +2762,139 @@ public:
 
 
 				ImGui::TreePop();
+			}
+
+			if (pConnection)
+			{
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				if (ImGui::TreeNode("Network"))
+				{
+					UdpLibrary::UdpConnectionStatistics stats;
+					pConnection->GetStats(&stats);
+
+					char temp[64];
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Total Bytes Sent");
+					FormatBytes(temp, stats.totalBytesSent);
+					ImGui::TableNextColumn(); ImGui::TextUnformatted(temp);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Total Bytes Received");
+					FormatBytes(temp, stats.totalBytesReceived);
+					ImGui::TableNextColumn(); ImGui::TextUnformatted(temp);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Total Packets Sent");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.totalPacketsSent);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Total Packets Received");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.totalPacketsReceived);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("CRC Rejected Packets");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.crcRejectedPackets);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Order Rejected Packets");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.orderRejectedPackets);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Out Of Order Packets Received");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.outOfOrderPacketsReceived);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Duplicate Packets Received");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.duplicatePacketsReceived);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Out Of Range Packets Received");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.outOfRangePacketsReceived);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Resent Packets Accelerated");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.resentPacketsAccelerated);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Resent Packets Timed Out");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.resentPacketsTimedOut);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Application Packets Sent");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.applicationPacketsSent);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Application Packets Received");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.applicationPacketsReceived);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Iterations");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.iterations);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Corrupt Packet Errors");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.corruptPacketErrors);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Master Ping Age");
+					ImGui::TableNextColumn(); ImGui::Text("%d", stats.masterPingAge);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Master Ping Time");
+					ImGui::TableNextColumn(); ImGui::Text("%d", stats.masterPingTime);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Average Ping Time");
+					ImGui::TableNextColumn(); ImGui::Text("%d", stats.averagePingTime);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Low Ping Time");
+					ImGui::TableNextColumn(); ImGui::Text("%d", stats.highPingTime);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("High Ping Time");
+					ImGui::TableNextColumn(); ImGui::Text("%d", stats.highPingTime);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Last Ping Time");
+					ImGui::TableNextColumn(); ImGui::Text("%d", stats.lastPingTime);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Reliable Average Ping");
+					ImGui::TableNextColumn(); ImGui::Text("%d", stats.reliableAveragePing);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Sync Our Sent");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.syncOurSent);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Sync Our Received");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.syncOurReceived);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Sync Their Sent");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.syncTheirSent);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Sync Their Received");
+					ImGui::TableNextColumn(); ImGui::Text("%lld", stats.syncTheirReceived);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Packet Loss: Sent");
+					ImGui::TableNextColumn(); ImGui::Text("%.2f%%", (1.0 - stats.percentSentSuccess) * 100);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Packet Loss: Received");
+					ImGui::TableNextColumn(); ImGui::Text("%.2f%%", (1.0 - stats.percentReceivedSuccess) * 100);
+
+					ImGui::TableNextRow();
+					ImGui::TableNextColumn(); ImGui::Text("Connection Strength");
+					ImGui::TableNextColumn(); ImGui::Text("%.2f%%", pConnection->GetConnectionStrength() * 100);
+
+					ImGui::TreePop();
+				}
 			}
 
 			ImGui::TableNextRow();
@@ -5505,13 +5638,14 @@ static GameFaceInspector* s_gameFaceInspector = nullptr;
 //============================================================================
 //============================================================================
 
-struct WindowMenuEntry
+struct ConsoleMenuEntry
 {
 	ImGuiWindowBase* window;
+	std::string command;
 	std::string menuName;
 	std::string itemName;
 };
-static std::vector<WindowMenuEntry> s_inspectorMenus;
+static std::vector<ConsoleMenuEntry> s_inspectorMenus;
 static bool s_inspectorMenusDirty = false;
 
 void DeveloperTools_DrawMenu()
@@ -5553,8 +5687,16 @@ void DeveloperTools_DrawMenu()
 
 		if (isMenuOpen)
 		{
-			if (ImGui::MenuItem(entry.itemName.c_str(), nullptr, entry.window->IsOpen()))
-				entry.window->Toggle();
+			if (entry.window != nullptr)
+			{
+				if (ImGui::MenuItem(entry.itemName.c_str(), nullptr, entry.window->IsOpen()))
+					entry.window->Toggle();
+			}
+			else
+			{
+				if (ImGui::MenuItem(entry.itemName.c_str(), nullptr, false))
+					DoCommand(entry.command.c_str(), false);
+			}
 		}
 	}
 
@@ -5566,7 +5708,14 @@ void DeveloperTools_DrawMenu()
 
 void DeveloperTools_RegisterMenuItem(ImGuiWindowBase* window, const char* itemName, const char* menuName)
 {
-	s_inspectorMenus.push_back(WindowMenuEntry{ window, menuName ? menuName : "Tools", itemName });
+	s_inspectorMenus.push_back(ConsoleMenuEntry{ window, "", menuName ? menuName : "Tools", itemName });
+
+	s_inspectorMenusDirty = true;
+}
+
+void DeveloperTools_RegisterMenuItem(const char* command, const char* itemName, const char* menuName)
+{
+	s_inspectorMenus.push_back(ConsoleMenuEntry{ nullptr, command, menuName ? menuName : "Tools", itemName });
 
 	s_inspectorMenusDirty = true;
 }
@@ -5579,11 +5728,19 @@ void DeveloperTools_UnregisterMenuItem(ImGuiWindowBase* window)
 		std::end(s_inspectorMenus));
 }
 
+void DeveloperTools_UnregisterMenuItem(const char* itemName)
+{
+	s_inspectorMenus.erase(
+		std::remove_if(std::begin(s_inspectorMenus), std::end(s_inspectorMenus),
+			[&](const auto& p) { return p.itemName == itemName; }),
+		std::end(s_inspectorMenus));
+}
+
 //============================================================================
 
 void DeveloperTools_WindowInspector_Initialize();
 void DeveloperTools_WindowInspector_Shutdown();
-void DeveloperTools_WindowInspector_SetGameState(uint32_t gameState);
+void DeveloperTools_WindowInspector_SetGameState(int gameState);
 
 static void DeveloperTools_Initialize()
 {
@@ -5622,6 +5779,8 @@ static void DeveloperTools_Initialize()
 
 	s_macroEvaluator = new MacroExpressionEvaluator();
 	DeveloperTools_RegisterMenuItem(s_macroEvaluator, "Macro Expression Evaluator", s_menuNameTools);
+
+	DeveloperTools_RegisterMenuItem("/squelch /lua run mq/eval", "Lua Expression Evaluator", s_menuNameTools);
 
 #if HAS_GAMEFACE_UI
 	s_gameFaceInspector = new GameFaceInspector();
@@ -5669,6 +5828,8 @@ static void DeveloperTools_Shutdown()
 	DeveloperTools_UnregisterMenuItem(s_macroEvaluator);
 	delete s_macroEvaluator; s_macroEvaluator = nullptr;
 
+	DeveloperTools_UnregisterMenuItem("Lua Expression Evaluator");
+
 #if HAS_GAMEFACE_UI
 	DeveloperTools_UnregisterMenuItem(s_gameFaceInspector);
 	delete s_gameFaceInspector; s_gameFaceInspector = nullptr;
@@ -5677,7 +5838,7 @@ static void DeveloperTools_Shutdown()
 	DeveloperTools_WindowInspector_Shutdown();
 }
 
-static void DeveloperTools_SetGameState(DWORD gameState)
+static void DeveloperTools_SetGameState(int gameState)
 {
 	DeveloperTools_WindowInspector_SetGameState(gameState);
 }

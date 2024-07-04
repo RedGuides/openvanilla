@@ -1,3 +1,43 @@
+July 3, 2024:
+- Fix EverQuest.Ping, add EverQuest.ConnectionStrength - these are the value from the net meter.
+- Fix UI not working after persona swap (#797).
+
+July 1, 2024:
+- emu: Fix CTAFrameDraw, fixes several issues with window inspector (#871)
+- emu: Fix CBazaarSearchWnd, fixes several issues with /bzsrch (#872)
+
+June 24, 2024:
+- Update for live hotfix patch
+
+June 20, 2024:
+- Fix a bug in EverQuest so the window doesn't constantly resize/restore
+  itself whenever common system events happen.
+
+June 19, 2024:
+- Update for live patch
+
+June 16, 2024:
+- Update for test patch
+- Fix MacroQuest.exe now shutting down properly
+- FIx /removeaura not parsing macro arguments (#869).
+
+May 26, 2024:
+- Update for test patch
+
+May 23, 2024:
+- Update for live hotfix patch
+- Please refrain from using MQ on truebox servers.
+
+May 15, 2024:
+- Update for live patch
+
+May 10, 2024:
+- Update for test patch
+
+April 25, 2024:
+- Adjust timestamps in chat and logging to be in local time (#853, #852).
+- Add logging auto cleanup feature to launcher (#419).
+
 March 27, 2024:
 - Updated emu client to catch it up with the latest features
 
