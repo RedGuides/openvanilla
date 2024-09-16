@@ -134,7 +134,7 @@
 	branch = master
 [submodule "plugins/MQItemColor"]
 	path = plugins/MQItemColor
-	url = https://gitlab.com/Ortster/MQItemColor.git
+	url = https://github.com/RedGuides/MQItemColor.git
 	branch = main
 [submodule "plugins/MQ2ItemScore"]
 	path = plugins/MQ2ItemScore
