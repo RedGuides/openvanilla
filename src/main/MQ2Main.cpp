@@ -107,6 +107,9 @@ MQModule* GetSpawnsModule();
 MQModule* GetItemsModule();
 MQModule* GetWindowsModule();
 MQModule* GetPostOfficeModule();
+#if IS_EMU_CLIENT
+MQModule* GetEmuExtensionsModule();
+#endif
 
 DWORD WINAPI MQ2Start(void* lpParameter);
 HANDLE hMQ2StartThread = nullptr;
@@ -611,7 +614,6 @@ void DoMainThreadInitialization()
 	InitializeStringDB();
 
 	InitializeChatHook();
-	InitializeMQ2CrashHandler();
 	InitializeAnonymizer();
 	InitializeInternalModules();
 	AddInternalModule(GetWindowsModule());
@@ -623,6 +625,9 @@ void DoMainThreadInitialization()
 	AddInternalModule(GetSpawnsModule());
 	AddInternalModule(GetItemsModule());
 	AddInternalModule(GetPostOfficeModule());
+#if IS_EMU_CLIENT
+	AddInternalModule(GetEmuExtensionsModule());
+#endif
 	InitializeMQ2AutoInventory();
 	InitializeMQ2KeyBinds();
 	InitializePlugins();
@@ -750,7 +755,7 @@ bool MQ2Initialize()
 	}
 
 	InitializeLogging();
-	InitializeCrashHandler();
+	CrashHandler_Startup();
 
 	srand(static_cast<uint32_t>(time(nullptr)));
 
@@ -816,7 +821,6 @@ void MQ2Shutdown()
 	ShutdownMQ2Pulse();
 	ShutdownLoginFrontend();
 	ShutdownMQ2AutoInventory();
-	ShutdownMQ2CrashHandler();
 	ShutdownAnonymizer();
 	ShutdownPlugins();
 	ShutdownFailedPlugins();
