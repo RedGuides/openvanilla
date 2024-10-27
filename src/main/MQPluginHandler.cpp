@@ -642,7 +642,7 @@ bool UnloadPlugin(std::string_view pluginName, bool save /* = false */)
 		if (IsInModuleList(pPlugin->szFilename))
 		{
 			s_pluginLoadFailure = "Plugin files still loaded.";
-			DebugSpew("UnloadPlugin(%s) failed: %.*s", pluginName.length(), pluginName.data(), s_pluginLoadFailure.c_str());
+			DebugSpew("UnloadPlugin(%s) failed: %.*s", s_pluginLoadFailure.c_str(), pluginName.length(), pluginName.data());
 
 			s_pluginUnloadFailedMap.emplace(canonicalName, rec);
 			return false;
@@ -999,14 +999,7 @@ void PluginsAddSpawn(PlayerClient* pNewSpawn)
 	if (!s_pluginsInitialized)
 		return;
 
-	int BodyType = GetBodyType(pNewSpawn);
-	PluginDebug("PluginsAddSpawn(%s,%d,%d)", pNewSpawn->Name, pNewSpawn->GetRace(), BodyType);
-
-	if (GetGameState() > GAMESTATE_CHARSELECT)
-		SetNameSpriteState(pNewSpawn, true);
-
-	if (GetBodyTypeDesc(BodyType)[0] == '*')
-		WriteChatf("Spawn '%s' has unknown bodytype %d", pNewSpawn->Name, BodyType);
+	PluginDebug("PluginsAddSpawn(%s,%d,%d)", pNewSpawn->Name, pNewSpawn->GetRace());
 
 	ForEachModule([pNewSpawn](const MQModule* module)
 		{
