@@ -1316,6 +1316,8 @@ void UpdateCurrencyCache(std::unordered_map<std::string, int>& cache, int value,
 	if (const char* ptr = pCDBStr->GetString(value, type))
 	{
 		const std::string currency = to_lower_copy(ptr);
+		if (currency.empty())
+			return;
 		cache[currency] = value;
 		cache[remove_chars(currency, chars_to_remove)] = value;
 	}
@@ -5196,13 +5198,17 @@ ItemContainer* GetItemContainerByType(ItemContainerInstance type)
 	case eItemContainerTeleportationKeyRingItems:
 		return &pLocalPC->TeleportationKeyRingItems;
 #endif
+#if HAS_ACTIVATED_KEYRING
+	case eItemContainerActivatedKeyRingItems:
+		return &pLocalPC->ActivatedKeyRingItems;
+#endif
 #if IS_EXPANSION_LEVEL(EXPANSION_LEVEL_COTF) // not exactly sure when this was added.
 	case eItemContainerOverflow:
 		return &pLocalPC->OverflowBufferItems;
 #endif
 #if HAS_DRAGON_HOARD
 	case eItemContainerDragonHoard:
-		return &pDragonHoardWnd ? &pDragonHoardWnd->Items : nullptr;
+		return pDragonHoardWnd ? &pDragonHoardWnd->Items : nullptr;
 #endif
 #if HAS_TRADESKILL_DEPOT
 	case eItemContainerTradeskillDepot:
