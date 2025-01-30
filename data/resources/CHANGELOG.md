@@ -1,3 +1,10 @@
+Jan 29, 2025:
+- test: Update for patch
+
+Jan 15, 2025:
+- live: Update for patch
+- lua: Add error handling to mq.delay, failures inside the callback should now propagate to the caller properly
+
 Jan 12, 2025:
 - test: Update for patch
 - Added ${Pet.ProcHold} and ${Pet.Resume}
