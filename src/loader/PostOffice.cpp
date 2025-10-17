@@ -351,6 +351,11 @@ void LauncherPostOffice::ProcessDropContainer(const ActorContainer& container)
 					DropIdentification(identity.container, dropped);
 	}
 
+	// always remove explicit drops from identities
+	auto iter = m_identities.find(container.uuid);
+	if (iter != m_identities.end())
+		m_identities.erase(iter);
+
 	std::visit(overload{
 		[this](const ActorContainer::Process&) {},
 		[this](const ActorContainer::Network& net)
@@ -400,12 +405,12 @@ void LauncherPostOffice::ProcessReconnects()
 
 		for (const auto& host : hosts)
 		{
-			AddNetworkHost(host.IP, host.Port);
+				AddNetworkHost(host.IP, host.Port);
+			}
 		}
 	}
-}
 
-void LauncherPostOffice::FillAndSend(MessagePtr message, std::function<bool(const ActorIdentification&)> predicate)
+void LauncherPostOffice::FillAndSend(MessagePtr message, const std::function<bool(const ActorIdentification&)>& predicate)
 {
 	std::vector<const ActorIdentification*> identities;
 	for (const auto& [_, identity] : m_identities)
@@ -534,7 +539,7 @@ void LauncherPostOffice::OnDeliver(const std::string& localAddress, MessagePtr& 
 
 uint32_t LauncherPostOffice::GetIdentityCount()
 {
-	return m_identities.size();
+	return (uint32_t)m_identities.size();
 }
 
 std::vector<const ActorStats*> LauncherPostOffice::GetStats()

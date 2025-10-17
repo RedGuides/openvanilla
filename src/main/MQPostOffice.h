@@ -14,13 +14,8 @@
 
 #pragma once
 
-#ifndef MQ2MAIN_EXPORTS
+#if !defined(MQ2MAIN_IMPL) && !defined(__clang__)
 #error This header should only be included from the MQ2Main project
-#endif
-
-#ifndef _WINDEF_
-class HWND__;
-typedef HWND__* HWND;
 #endif
 
 #include "routing/PostOffice.h"
