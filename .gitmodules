@@ -308,10 +308,6 @@
 	path = plugins/MQMountClassicModels
 	url = https://github.com/Knightly1/MQMountClassicModels.git
 	branch = main
-[submodule "plugins/MQ2DotNet"]
-	path = plugins/MQ2DotNet
-	url = https://github.com/projecteon/MQ2DotNet.git
-	branch = master
 [submodule "plugins/MQ2Tracking"]
 	path = plugins/MQ2Tracking
 	url = https://github.com/RedGuides/MQ2Tracking.git
