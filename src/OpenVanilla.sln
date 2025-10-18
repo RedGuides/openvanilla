@@ -584,6 +584,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MQ2MeshManager", "..\plugin
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MQ2Collectible", "..\plugins\MQ2Collectible\MQ2Collectible.vcxproj", "{A853644B-6401-4DBF-B252-167A1DCDFB2E}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Actors", "tests\Actors\Actors.vcxproj", "{86E7D2A2-C3E1-499A-800E-9557D292E0C2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -1522,6 +1524,14 @@ Global
 		{A853644B-6401-4DBF-B252-167A1DCDFB2E}.Release|Win32.Build.0 = Release|Win32
 		{A853644B-6401-4DBF-B252-167A1DCDFB2E}.Release|x64.ActiveCfg = Release|x64
 		{A853644B-6401-4DBF-B252-167A1DCDFB2E}.Release|x64.Build.0 = Release|x64
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Debug|Win32.ActiveCfg = Debug|Win32
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Debug|Win32.Build.0 = Debug|Win32
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Debug|x64.ActiveCfg = Debug|x64
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Debug|x64.Build.0 = Debug|x64
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Release|Win32.ActiveCfg = Release|Win32
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Release|Win32.Build.0 = Release|Win32
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Release|x64.ActiveCfg = Release|x64
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1662,6 +1672,7 @@ Global
 		{3D4E0F3F-D168-4991-8B12-2A73617C0EFB} = {97722087-A7EB-46FC-BCDF-6575C109BB98}
 		{D2B98AEB-5F1E-4C21-8F36-DE8CFFF63AFB} = {97722087-A7EB-46FC-BCDF-6575C109BB98}
 		{A853644B-6401-4DBF-B252-167A1DCDFB2E} = {97722087-A7EB-46FC-BCDF-6575C109BB98}
+		{86E7D2A2-C3E1-499A-800E-9557D292E0C2} = {EAFB7791-F141-4B87-A0F9-B5685A90A2C1}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {3A5F6FC6-8612-4587-9706-DC0A4B559E22}
