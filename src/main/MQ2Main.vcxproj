@@ -477,9 +477,6 @@
     <ClCompile Include="MQ2Windows.cpp" />
     <ClCompile Include="MQAchievements.cpp" />
     <ClCompile Include="MQInventory.cpp" />
-    <ClCompile Include="MQPostOfficeInternal.cpp">
-      <ExcludedFromBuild>true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="MQRenderDoc.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
@@ -535,13 +532,13 @@
     <ClInclude Include="..\..\include\mq\Plugin.h" />
     <ClInclude Include="..\..\include\mq\utils\Args.h" />
     <ClInclude Include="..\..\include\mq\utils\Benchmarks.h" />
+    <ClInclude Include="..\..\include\mq\utils\HotKeys.h" />
     <ClInclude Include="..\..\include\mq\utils\Keybinds.h" />
     <ClInclude Include="..\..\include\mq\utils\Markov.h" />
     <ClInclude Include="..\..\include\mq\utils\Naming.h" />
     <ClInclude Include="..\..\include\mq\utils\OS.h" />
     <ClInclude Include="..\common\Common.h" />
     <ClInclude Include="..\common\ConfigUtils.h" />
-    <ClInclude Include="..\common\HotKeys.h" />
     <ClInclude Include="..\common\MiscUtils.h" />
     <ClInclude Include="..\common\StringUtils.h" />
     <ClInclude Include="datatypes\DataTypeList.h" />

@@ -15,24 +15,30 @@
 #include "loader/LoaderAutoLogin.h"
 #include "loader/MacroQuest.h"
 #include "loader/ImGui.h"
+#include "loader/PostOffice.h"
 #include "imgui/ImGuiFileDialog.h"
 #include "imgui/imgui_internal.h"
 #include "login/Login.h"
 #include "login/AutoLogin.h"
 #include "routing/PostOffice.h"
+#include "mq/base/Config.h"
+#include "mq/base/String.h"
 
-#include <fmt/format.h>
-#include <fmt/os.h>
-#include <spdlog/spdlog.h>
-#include <wil/resource.h>
+#include "fmt/format.h"
+#include "fmt/os.h"
+#include "spdlog/spdlog.h"
+#include "wil/resource.h"
+
 #include <filesystem>
 #include <shellapi.h>
 
 namespace fs = std::filesystem;
 using namespace std::chrono_literals;
 
+namespace proto = mq::proto;
+
 // set of loaded instances -- be careful to only read/write this from actors to ensure no race conditions
-static postoffice::Dropbox s_dropbox;
+static mq::postoffice::Dropbox s_dropbox;
 static std::queue<std::pair<ProfileRecord, bool>> s_pendingLogins;
 static auto s_lastLoginTime = std::chrono::steady_clock::now();
 
@@ -188,13 +194,13 @@ void ProcessPendingLogins()
 				SerializeProfile(record, direct);
 			}
 
-			Post(applyProfilePID, mq::proto::login::ApplyProfile, missive);
+			Post(applyProfilePID, proto::login::ApplyProfile, missive);
 		}
 		else
 		{
 			StartInstance(record);
 
-			static auto launchDelay = login::db::CacheSetting<int>("client_launch_delay", 3, GetIntFromString);
+			static auto launchDelay = login::db::CacheSetting<int>("client_launch_delay", 3, mq::GetIntFromString);
 			delay = launchDelay.Read();
 		}
 
@@ -207,7 +213,7 @@ void Import()
 {
 	// set the eq path
 	if (!login::db::GetPathFromServerType(GetServerType()))
-		login::db::CreateOrUpdateServerType(GetServerType(), GetPrivateProfileString("Profiles", "DefaultEQPath", "", internal_paths::s_autoLoginIni));
+		login::db::CreateOrUpdateServerType(GetServerType(), mq::GetPrivateProfileString("Profiles", "DefaultEQPath", "", internal_paths::s_autoLoginIni));
 
 	login::db::WriteProfileGroups(LoadAutoLoginProfiles(internal_paths::s_autoLoginIni, GetServerType()), GetEQRoot());
 }
@@ -223,12 +229,12 @@ std::string GetEQRoot()
 	return "";
 }
 
-static void ReceivedMessageHandler(postoffice::MessagePtr message)
+static void ReceivedMessageHandler(mq::postoffice::MessagePtr message)
 {
 	proto::login::LoginMessage login_message;
 	if (login_message.ParseFromString(message->payload()))
 	{
-		switch (login_message.id())
+		switch (login_message.id())  // NOLINT(clang-diagnostic-switch-enum)
 		{
 		case proto::login::MessageId::ProfileLoaded:
 			// this message needs to come from the client after it has injected,
@@ -294,12 +300,14 @@ static void ReceivedMessageHandler(postoffice::MessagePtr message)
 		}
 	}
 	else
+	{
 		SPDLOG_ERROR("Failed to parse login message from routed proto");
+	}
 }
 
 void InitializeAutoLogin()
 {
-	s_dropbox = postoffice::GetPostOffice().RegisterAddress("autologin", ReceivedMessageHandler);
+	s_dropbox = GetPostOffice().RegisterAddress("autologin", ReceivedMessageHandler);
 
 	// Get path to mq2autologin.ini
 	internal_paths::s_autoLoginIni = (fs::path{ internal_paths::Config }  / "MQ2AutoLogin.ini").string();
@@ -312,7 +320,7 @@ void InitializeAutoLogin()
 	// test reading the password. if it's not correct, prompt to enter it
 	if (login::db::ReadSetting("master_pass") && !login::db::ReadMasterPass())
 		LauncherImGui::OpenWindow(&ShowPasswordWindow, "Enter Master Password");
-	else if (const auto load_ini = login::db::ReadSetting("load_ini"); !load_ini || GetBoolFromString(*load_ini, false))
+	else if (const auto load_ini = login::db::ReadSetting("load_ini"); !load_ini || mq::GetBoolFromString(*load_ini, false))
 	{
 		// load_ini implies a first load situation -- let's ensure we have a master pass or prompt for one
 		// this will specifically happen if master_pass is not set, so prompt to enter one
