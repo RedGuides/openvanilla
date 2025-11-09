@@ -22,6 +22,8 @@
 #include "CrashHandler.h"
 #include "mq/base/ScopeExit.h"
 
+#include <algorithm>
+
 namespace mq {
 
 std::vector<std::weak_ptr<MQTransient>> s_objectMap;
@@ -202,6 +204,23 @@ MQ2Type* MQDataAPI::FindDataType(const char* Name) const
 		return nullptr;
 
 	return iter->second.type;
+}
+
+std::vector<std::string> MQDataAPI::GetDataTypeNames() const
+{
+	std::scoped_lock lock(m_mutex);
+
+	std::vector<std::string> result;
+	result.reserve(m_dataTypeMap.size());
+
+	for (const auto& [name, rec] : m_dataTypeMap)
+	{
+		result.push_back(name);
+	}
+
+	std::sort(result.begin(), result.end());
+
+	return result;
 }
 
 bool MQDataAPI::AddTopLevelObject(const char* szName, MQTopLevelObjectFunction Function,
@@ -666,6 +685,9 @@ void MQDataAPI::RegisterTopLevelObjects()
 #endif
 #if HAS_ACTIVATED_ITEM_KEYRING
 	AddTopLevelObject("ActivatedItem", datatypes::MQ2KeyRingType::dataActivatedItem);
+#endif
+#if HAS_EQUIPMENT_KEYRING
+	AddTopLevelObject("EquipmentItem", datatypes::MQ2KeyRingType::dataEquipmentItem);
 #endif
 #endif // HAS_KEYRING_WINDOW
 }
@@ -1870,6 +1892,11 @@ bool RemoveMQ2Type(MQ2Type& type)
 MQ2Type* FindMQ2DataType(const char* name)
 {
 	return pDataAPI->FindDataType(name);
+}
+
+std::vector<std::string> GetDataTypeNames()
+{
+	return pDataAPI->GetDataTypeNames();
 }
 
 bool AddMQ2TypeExtension(const char* typeName, MQ2Type* extension)
