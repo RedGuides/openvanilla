@@ -1,6 +1,6 @@
 /*
  * MacroQuest: The extension platform for EverQuest
- * Copyright (C) 2002-2024 MacroQuest Authors
+ * Copyright (C) 2002-present MacroQuest Authors
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2, as published by
@@ -17,14 +17,12 @@
 // Uncomment to see super spammy read/write trace logging
 //#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
 
-#include "Network.h"
-#include "Routing.h"
-
-#include "Network.pb.h"
+#include "routing/Network.h"
+#include "routing/Routing.h"
+#include "routing/Network.pb.h"
 
 #include "asio.hpp"
-
-#include <spdlog/spdlog.h>
+#include "spdlog/spdlog.h"
 
 #include <queue>
 #include <map>
@@ -43,7 +41,7 @@ using asio::ip::tcp;
 using namespace mq;
 
 class NetworkSession;
-using InternalMessageHandler = std::function<void(const peernetwork::Header&, NetworkSession*, std::unique_ptr<uint8_t[]>&&, uint32_t)>;
+using InternalMessageHandler = std::function<void(const peernetwork::Header&, NetworkSession*, std::unique_ptr<uint8_t[]>, uint32_t)>;
 
 template <typename T>
 class LockedQueue
@@ -79,7 +77,7 @@ class NetworkMessage
 {
 public:
 	// outgoing message
-	NetworkMessage(peernetwork::Header&& header, std::unique_ptr<uint8_t[]>&& payload, uint32_t length)
+	NetworkMessage(peernetwork::Header header, std::unique_ptr<uint8_t[]> payload, uint32_t length)
 		: m_parsedHeader(std::move(header))
 		, m_length(length)
 		, m_payload(std::move(payload))
@@ -88,18 +86,14 @@ public:
 	}
 
 	// incoming message
-	NetworkMessage()
-		: m_headerLength(0)
-		, m_headerLengthNetwork(0)
-		, m_length(0)
-	{}
-
-	NetworkMessage(const NetworkMessage&) = delete;
-	NetworkMessage(NetworkMessage&&) = delete;
-	NetworkMessage& operator=(const NetworkMessage&) = delete;
-	NetworkMessage& operator=(NetworkMessage&&) = delete;
+	NetworkMessage() = default;
 
 	~NetworkMessage() = default;
+
+	NetworkMessage(const NetworkMessage&) = delete;
+	NetworkMessage& operator=(const NetworkMessage&) = delete;
+	NetworkMessage(NetworkMessage&&) = delete;
+	NetworkMessage& operator=(NetworkMessage&&) = delete;
 
 	void InitHeader()
 	{
@@ -167,20 +161,20 @@ public:
 	}
 
 private:
-	uint32_t m_headerLength;
-	uint32_t m_headerLengthNetwork;
+	uint32_t m_headerLength = 0;
+	uint32_t m_headerLengthNetwork = 0;
 	std::unique_ptr<uint8_t[]> m_header;
 
 	peernetwork::Header m_parsedHeader;
 
-	uint32_t m_length;
+	uint32_t m_length = 0;
 	std::unique_ptr<uint8_t[]> m_payload;
 };
 
 class NetworkSession
 {
 public:
-	NetworkSession(uint16_t peer_port, tcp::socket&& socket, InternalMessageHandler receiveHandler)
+	NetworkSession(uint16_t peer_port, tcp::socket socket, InternalMessageHandler receiveHandler)
 		: m_socket(std::move(socket))
 		, m_peerPort(peer_port)
 		, m_address({m_socket.remote_endpoint().address().to_string(), m_socket.remote_endpoint().port()})
@@ -191,12 +185,6 @@ public:
 	{
 		SPDLOG_TRACE("{}: Session created ({}:{})", m_peerPort, m_knownAddress.IP, m_knownAddress.Port);
 	}
-
-	NetworkSession() = delete;
-	NetworkSession(const NetworkSession&) = delete;
-	NetworkSession(NetworkSession&&) = delete;
-	NetworkSession& operator=(const NetworkSession&) = delete;
-	NetworkSession& operator=(NetworkSession&&) = delete;
 
 	~NetworkSession()
 	{
@@ -209,6 +197,11 @@ public:
 			m_socket.cancel();
 		}
 	}
+
+	NetworkSession(const NetworkSession&) = delete;
+	NetworkSession& operator=(const NetworkSession&) = delete;
+	NetworkSession(NetworkSession&&) = delete;
+	NetworkSession& operator=(NetworkSession&&) = delete;
 
 	void Shutdown()
 	{
@@ -243,7 +236,7 @@ public:
 		Read();
 	}
 
-	void Write(peernetwork::Header&& header, std::unique_ptr<uint8_t[]> payload, uint32_t length)
+	void Write(peernetwork::Header header, std::unique_ptr<uint8_t[]> payload, uint32_t length)
 	{
 		// don't start writes on sessions that are closing down
 		if (m_active)
@@ -450,12 +443,6 @@ private:
 class NetworkPeer
 {
 public:
-	NetworkPeer() = delete;
-	NetworkPeer(const NetworkPeer&) = delete;
-	NetworkPeer(NetworkPeer&&) = delete;
-	NetworkPeer& operator=(const NetworkPeer&) = delete;
-	NetworkPeer& operator=(NetworkPeer&&) = delete;
-
 	NetworkPeer(
 		uint16_t port,
 		PeerMessageHandler receiveHandler,
@@ -476,6 +463,11 @@ public:
 	{
 		SPDLOG_TRACE("{}: Removing peer", m_port);
 	}
+
+	NetworkPeer(const NetworkPeer&) = delete;
+	NetworkPeer& operator=(const NetworkPeer&) = delete;
+	NetworkPeer(NetworkPeer&&) = delete;
+	NetworkPeer& operator=(NetworkPeer&&) = delete;
 
 	void Run()
 	{
@@ -728,13 +720,13 @@ private:
 			});
 	}
 
-	NetworkSession* AddSession(tcp::socket&& socket)
+	NetworkSession* AddSession(tcp::socket socket)
 	{
 		auto session = std::make_unique<NetworkSession>(m_port, std::move(socket),
 			[this](
 				const peernetwork::Header& header,
 				NetworkSession* session,
-				std::unique_ptr<uint8_t[]>&& payload,
+				std::unique_ptr<uint8_t[]> payload,
 				uint32_t length)
 			{
 				if (m_running)
@@ -1000,10 +992,12 @@ private:
 			// note that there is no unlock here because we are adding things to known hosts this entire loop
 			for (const auto& address : m_queuedConnects)
 			{
-				if (m_sessions.find(address) == m_sessions.end() &&
-					m_connectingSessions.find(address) == m_connectingSessions.end() &&
-					m_pendingConnects.insert(address).second)
+				if (m_sessions.find(address) == m_sessions.end()
+					&& m_connectingSessions.find(address) == m_connectingSessions.end()
+					&& m_pendingConnects.insert(address).second)
+				{
 					Connect(address);
+				}
 			}
 
 			m_queuedConnects.clear();
