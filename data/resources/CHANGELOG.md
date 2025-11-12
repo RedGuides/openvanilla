@@ -1,3 +1,21 @@
+## Live Patch Update 11/12/2025
+
+- Includes all changes from previous test patches.
+
+
+## Test Patch Update 11/6/2025
+
+- Added new EquipmentItem TLO that provides access to the new equipment keyring. Usage is
+  the same as other keyrings.
+- Locked Items are added to the client, but access through MQ is not available yet.
+- Added CashLoot member to Item type
+
+
+## Previous Updates
+
+November 1, 2025:
+- test: Update for test patch
+
 October 27, 2025:
 - Added network capability for actors
   Add any peers to a new \[NetworkPeers\] section in your ini in the format \<ip\>=\<port\>
