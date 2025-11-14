@@ -84,6 +84,7 @@ option(MQ_BUILD_PLUGINS "Build built-in plugins" ON)
 option(MQ_BUILD_CUSTOM_PLUGINS "Build custom plugins from plugins directory" ON)
 option(MQ_BUILD_LAUNCHER "Build MacroQuest loader" ON)
 option(MQ_BUILD_TESTS "Build tests" OFF)
+option(MQ_ADD_MQ2MAIN_DEPENDENCY "Add MQ2Main as dependency to custom plugins if not present" OFF)
 
 # Global properties
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -106,13 +107,10 @@ endif()
 
 set(VCPKG_TARGET_TRIPLET "${VCPKG_ARCH}-windows-static" CACHE STRING "")
 
-# set up powershell availability to use the vcpkg_mq script
-find_program(POWERSHELL_PATH NAMES powershell powershell.exe)
-set(VCPKG_MQ_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_scripts/vcpkg_mq.ps1")
-
-if(NOT DEFINED POWERSHELL_PATH)
-    message(WARNING "Could not find powershell, not running vcpkg_mq update")
-endif()
+# Initialize global properties to collect vcpkg manifest files
+set_property(GLOBAL PROPERTY MQ_VCPKG_MQ_FILES "")
+set_property(GLOBAL PROPERTY MQ_VCPKG_MQ_X86_FILES "")
+set_property(GLOBAL PROPERTY MQ_VCPKG_MQ_X64_FILES "")
 
 function(add_vcxproj PROJECT_LOCATION PROJECT_NAME PROJECT_PREFIX)
     # Optional 4th argument for dependencies
@@ -129,163 +127,246 @@ function(add_vcxproj PROJECT_LOCATION PROJECT_NAME PROJECT_PREFIX)
     set_property(TARGET ${PROJECT_NAME} PROPERTY FOLDER ${PROJECT_PREFIX})
     unset(VCXPROJ_LOCATION CACHE)  # Clear cache to allow next call to search fresh
 
-    if (MQ_BUILD_VCPKG AND POWERSHELL_PATH)
-        set(VCPKG_MQ_ARGS -ProjectName "${PROJECT_NAME}" -ProjectDirectory "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_LOCATION}" -MQRoot "${CMAKE_CURRENT_SOURCE_DIR}" -Platform "${VCPKG_ARCH}" -Toolchain "${CMAKE_GENERATOR_TOOLSET}")
-        execute_process(
-            COMMAND "${POWERSHELL_PATH}" -ExecutionPolicy Bypass -NoProfile -NonInteractive -File "${VCPKG_MQ_PATH}" ${VCPKG_MQ_ARGS}
-            COMMAND_ECHO STDOUT
-            RESULT_VARIABLE VCPKG_MQ_RESULT
-            OUTPUT_VARIABLE VCPKG_MQ_OUTPUT
-            ECHO_OUTPUT_VARIABLE
-            ERROR_VARIABLE VCPKG_MQ_ERROR
-        )
+    # Collect vcpkg manifest files for later merging
+    if(MQ_BUILD_VCPKG)
+        set(PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${PROJECT_LOCATION}")
 
-        if (NOT VCPKG_MQ_RESULT EQUAL 0)
-            message(FATAL_ERROR "Failed to install vcpkg package with error: ${VCPKG_MQ_ERROR}")
-        else()
-            message(STATUS "installed vcpkg packages for ${PROJECT_NAME}")
+        # Check for vcpkg_mq.txt
+        if(EXISTS "${PROJECT_DIR}/vcpkg_mq.txt")
+            get_property(EXISTING_FILES GLOBAL PROPERTY MQ_VCPKG_MQ_FILES)
+            list(APPEND EXISTING_FILES "${PROJECT_DIR}/vcpkg_mq.txt")
+            set_property(GLOBAL PROPERTY MQ_VCPKG_MQ_FILES "${EXISTING_FILES}")
         endif()
 
-        unset(VCPKG_MQ_ARGS CACHE)
-        unset(VCPKG_MQ_RESULT CACHE)
-        unset(VCPKG_MQ_OUTPUT CACHE)
-        unset(VCPKG_MQ_ERROR CACHE)
+        # Check for vcpkg_mq_x86.txt
+        if(EXISTS "${PROJECT_DIR}/vcpkg_mq_x86.txt")
+            get_property(EXISTING_FILES GLOBAL PROPERTY MQ_VCPKG_MQ_X86_FILES)
+            list(APPEND EXISTING_FILES "${PROJECT_DIR}/vcpkg_mq_x86.txt")
+            set_property(GLOBAL PROPERTY MQ_VCPKG_MQ_X86_FILES "${EXISTING_FILES}")
+        endif()
+
+        # Check for vcpkg_mq_x64.txt
+        if(EXISTS "${PROJECT_DIR}/vcpkg_mq_x64.txt")
+            get_property(EXISTING_FILES GLOBAL PROPERTY MQ_VCPKG_MQ_X64_FILES)
+            list(APPEND EXISTING_FILES "${PROJECT_DIR}/vcpkg_mq_x64.txt")
+            set_property(GLOBAL PROPERTY MQ_VCPKG_MQ_X64_FILES "${EXISTING_FILES}")
+        endif()
     endif()
 endfunction()
 
+function(finalize_vcpkg_installation)
+    if(MQ_BUILD_VCPKG)
+        # set up powershell availability to use the vcpkg_mq script
+        find_program(POWERSHELL_PATH NAMES powershell powershell.exe)
+        set(VCPKG_MQ_PATH "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_scripts/vcpkg_mq.ps1")
+
+        if(POWERSHELL_PATH)
+            # Create build directory for merged manifest files
+            set(VCPKG_MANIFEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/vcpkg_manifests")
+            file(MAKE_DIRECTORY "${VCPKG_MANIFEST_DIR}")
+
+            # Helper function to merge manifest files
+            function(merge_manifest_files FILE_LIST OUTPUT_FILE)
+                if(FILE_LIST)
+                    # Use indexed variables: PKG_KEY_N and PKG_FEATURES_N
+                    set(PKG_COUNT 0)
+
+                    foreach(MANIFEST_FILE ${FILE_LIST})
+                        if(EXISTS "${MANIFEST_FILE}")
+                            file(STRINGS "${MANIFEST_FILE}" FILE_LINES)
+                            foreach(LINE ${FILE_LINES})
+                                # Skip empty lines and comments
+                                string(STRIP "${LINE}" STRIPPED_LINE)
+                                if(STRIPPED_LINE AND NOT STRIPPED_LINE MATCHES "^#")
+                                    # Parse package format: package[feature1,feature2]:triplet
+                                    # Extract package name (before [ or :)
+                                    string(REGEX REPLACE "([^:\\[]+).*" "\\1" PACKAGE_NAME "${STRIPPED_LINE}")
+
+                                    # Extract features (between [ and ])
+                                    set(FEATURES "")
+                                    if(STRIPPED_LINE MATCHES "\\[(.+)\\]")
+                                        string(REGEX REPLACE ".*\\[(.+)\\].*" "\\1" FEATURES "${STRIPPED_LINE}")
+                                    endif()
+
+                                    # Extract triplet (after :)
+                                    set(TRIPLET "")
+                                    if(STRIPPED_LINE MATCHES ":([^:]+)$")
+                                        string(REGEX REPLACE ".*:([^:]+)$" "\\1" TRIPLET "${STRIPPED_LINE}")
+                                    endif()
+
+                                    # Create key
+                                    if(TRIPLET)
+                                        set(KEY "${PACKAGE_NAME}:${TRIPLET}")
+                                    else()
+                                        set(KEY "${PACKAGE_NAME}")
+                                    endif()
+
+                                    # Find existing entry
+                                    set(FOUND_INDEX -1)
+                                    if(PKG_COUNT GREATER 0)
+                                        math(EXPR LAST_PKG "${PKG_COUNT} - 1")
+                                        foreach(I RANGE ${LAST_PKG})
+                                            if(PKG_KEY_${I} STREQUAL KEY)
+                                                set(FOUND_INDEX ${I})
+                                                break()
+                                            endif()
+                                        endforeach()
+                                    endif()
+
+                                    if(FOUND_INDEX EQUAL -1)
+                                        # New entry
+                                        set(PKG_KEY_${PKG_COUNT} "${KEY}")
+                                        set(PKG_FEATURES_${PKG_COUNT} "${FEATURES}")
+                                        math(EXPR PKG_COUNT "${PKG_COUNT} + 1")
+                                    else()
+                                        # Merge features
+                                        if(FEATURES)
+                                            set(EXISTING "${PKG_FEATURES_${FOUND_INDEX}}")
+                                            # Split into lists for dedup
+                                            if(EXISTING)
+                                                string(REPLACE "," ";" EXISTING_LIST "${EXISTING}")
+                                            else()
+                                                set(EXISTING_LIST "")
+                                            endif()
+                                            string(REPLACE "," ";" NEW_LIST "${FEATURES}")
+                                            # Add new features
+                                            foreach(FEATURE ${NEW_LIST})
+                                                string(STRIP "${FEATURE}" FCLEAN)
+                                                list(FIND EXISTING_LIST "${FCLEAN}" FIDX)
+                                                if(FIDX EQUAL -1)
+                                                    list(APPEND EXISTING_LIST "${FCLEAN}")
+                                                endif()
+                                            endforeach()
+                                            # Convert back
+                                            list(JOIN EXISTING_LIST "," MERGED)
+                                            set(PKG_FEATURES_${FOUND_INDEX} "${MERGED}")
+                                        endif()
+                                    endif()
+                                endif()
+                            endforeach()
+                        endif()
+                    endforeach()
+
+                    # Build output
+                    set(OUTPUT_LINES "")
+                    if(PKG_COUNT GREATER 0)
+                        math(EXPR LAST_PKG "${PKG_COUNT} - 1")
+                        foreach(I RANGE ${LAST_PKG})
+                            set(KEY "${PKG_KEY_${I}}")
+                            set(FEATURES "${PKG_FEATURES_${I}}")
+
+                            # Split key
+                            if(KEY MATCHES "^([^:]+):(.+)$")
+                                string(REGEX REPLACE "^([^:]+):(.+)$" "\\1" PKG "${KEY}")
+                                string(REGEX REPLACE "^([^:]+):(.+)$" "\\2" TRP "${KEY}")
+                                if(FEATURES)
+                                    set(OUTPUT_LINE "${PKG}[${FEATURES}]:${TRP}")
+                                else()
+                                    set(OUTPUT_LINE "${PKG}:${TRP}")
+                                endif()
+                            else()
+                                if(FEATURES)
+                                    set(OUTPUT_LINE "${KEY}[${FEATURES}]")
+                                else()
+                                    set(OUTPUT_LINE "${KEY}")
+                                endif()
+                            endif()
+
+                            list(APPEND OUTPUT_LINES "${OUTPUT_LINE}")
+                        endforeach()
+                    endif()
+
+                    # Write output
+                    if(OUTPUT_LINES)
+                        list(JOIN OUTPUT_LINES "\n" MERGED_TEXT)
+                        file(WRITE "${OUTPUT_FILE}" "${MERGED_TEXT}\n")
+                        message(STATUS "Created merged manifest: ${OUTPUT_FILE}")
+                    endif()
+                endif()
+            endfunction()
+
+            # Merge each type of manifest file
+            get_property(MQ_FILES GLOBAL PROPERTY MQ_VCPKG_MQ_FILES)
+            get_property(X86_FILES GLOBAL PROPERTY MQ_VCPKG_MQ_X86_FILES)
+            get_property(X64_FILES GLOBAL PROPERTY MQ_VCPKG_MQ_X64_FILES)
+
+            merge_manifest_files("${MQ_FILES}" "${VCPKG_MANIFEST_DIR}/vcpkg_mq.txt")
+            merge_manifest_files("${X86_FILES}" "${VCPKG_MANIFEST_DIR}/vcpkg_mq_x86.txt")
+            merge_manifest_files("${X64_FILES}" "${VCPKG_MANIFEST_DIR}/vcpkg_mq_x64.txt")
+
+            # Execute vcpkg once with merged manifests
+            message(STATUS "")
+            message(STATUS "Installing vcpkg packages for MacroQuest...")
+
+            set(VCPKG_MQ_ARGS
+                    -ProjectName "MacroQuest"
+                    -ProjectDirectory "${VCPKG_MANIFEST_DIR}"
+                    -MQRoot "${CMAKE_CURRENT_SOURCE_DIR}"
+                    -Platform "${VCPKG_ARCH}"
+                    -Toolchain "${CMAKE_GENERATOR_TOOLSET}"
+            )
+
+            execute_process(
+                    COMMAND "${POWERSHELL_PATH}" -ExecutionPolicy Bypass -NoProfile -NonInteractive -File "${VCPKG_MQ_PATH}" ${VCPKG_MQ_ARGS}
+                    COMMAND_ECHO STDOUT
+                    RESULT_VARIABLE VCPKG_MQ_RESULT
+                    OUTPUT_VARIABLE VCPKG_MQ_OUTPUT
+                    ECHO_OUTPUT_VARIABLE
+                    ERROR_VARIABLE VCPKG_MQ_ERROR
+            )
+
+            if(NOT VCPKG_MQ_RESULT EQUAL 0)
+                message(FATAL_ERROR "Failed to install vcpkg packages with error: ${VCPKG_MQ_ERROR}")
+            else()
+                message(STATUS "Successfully installed all vcpkg packages")
+            endif()
+        else()
+            message(WARNING "Could not find powershell, not running vcpkg_mq update")
+        endif()
+    endif()
+endfunction()
+
+# These could all be in their respective subdirectories, but prefer in this case a single
+# file to specify the entire core project since everything here is maintained with
+# bespoke vcxproj and prop files without CMakeLists.txt to build projects.
+
 # Add main components
 add_vcxproj(src/eqlib eqlib "core")
-add_vcxproj(src/main MQ2Main "core")
-
-# Set MQ2Main as the default startup project in Visual Studio
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT MQ2Main)
-
 add_vcxproj(src/imgui imgui "core/libraries")
 add_vcxproj(src/routing routing "core/libraries")
 add_vcxproj(src/login login "core/libraries")
 add_vcxproj(contrib/zep zep "core/libraries")
+add_vcxproj(src/main MQ2Main "core" eqlib imgui routing zep)
+
+# Set MQ2Main as the default startup project in Visual Studio
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT MQ2Main)
 
 if(MQ_BUILD_LAUNCHER)
-    add_vcxproj(src/loader MacroQuest "core/applications")
+    add_vcxproj(src/loader MacroQuest "core/applications" imgui login routing)
 endif()
 
 # Add plugins
 if(MQ_BUILD_PLUGINS)
-    add_vcxproj(src/plugins/autobank MQ2AutoBank "core/plugins")
-    add_vcxproj(src/plugins/autologin MQ2AutoLogin "core/plugins")
-    add_vcxproj(src/plugins/bzsrch MQ2Bzsrch "core/plugins")
-    add_vcxproj(src/plugins/chat MQ2Chat "core/plugins")
-    add_vcxproj(src/plugins/chatwnd MQ2ChatWnd "core/plugins")
-    add_vcxproj(src/plugins/custombinds MQ2CustomBinds "core/plugins")
-    add_vcxproj(src/plugins/eqbugfix MQ2EQBugFix "core/plugins")
-    add_vcxproj(src/plugins/hud MQ2HUD "core/plugins")
-    add_vcxproj(src/plugins/itemdisplay MQ2ItemDisplay "core/plugins")
-    add_vcxproj(src/plugins/labels MQ2Labels "core/plugins")
-    add_vcxproj(src/plugins/lua MQ2Lua "core/plugins")
-    add_vcxproj(src/plugins/map MQ2Map "core/plugins")
-    add_vcxproj(src/plugins/pluginapi pluginapi "core/plugins")
-    add_vcxproj(src/plugins/targetinfo MQ2TargetInfo "core/plugins")
-    add_vcxproj(src/plugins/xtarinfo MQ2XTarInfo "core/plugins")
+    add_vcxproj(src/plugins/pluginapi pluginapi "core/plugins" routing)
+    add_vcxproj(src/plugins/autobank MQ2AutoBank "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/autologin MQ2AutoLogin "core/plugins" login pluginapi MQ2Main)
+    add_vcxproj(src/plugins/bzsrch MQ2Bzsrch "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/chat MQ2Chat "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/chatwnd MQ2ChatWnd "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/custombinds MQ2CustomBinds "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/eqbugfix MQ2EQBugFix "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/hud MQ2HUD "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/itemdisplay MQ2ItemDisplay "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/labels MQ2Labels "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/lua MQ2Lua "core/plugins" imgui pluginapi MQ2Main)
+    add_vcxproj(src/plugins/map MQ2Map "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/targetinfo MQ2TargetInfo "core/plugins" pluginapi MQ2Main)
+    add_vcxproj(src/plugins/xtarinfo MQ2XTarInfo "core/plugins" pluginapi MQ2Main)
 endif()
 
 # Add custom plugins from root plugins directory
 if(MQ_BUILD_CUSTOM_PLUGINS)
-    # Scan for custom plugins in the plugins directory
-    file(GLOB CUSTOM_PLUGIN_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*/")
-    foreach(PLUGIN_DIR ${CUSTOM_PLUGIN_DIRS})
-        if(IS_DIRECTORY ${PLUGIN_DIR})
-            get_filename_component(PLUGIN_NAME ${PLUGIN_DIR} NAME)
-
-            if(EXISTS "${PLUGIN_DIR}/CMakeLists.txt")
-                # Priority 1: Check if the plugin has a top-level CMakeLists.txt TODO: this is completely untested
-                message(STATUS "Found custom plugin with CMakeLists.txt: ${PLUGIN_NAME}")
-                add_subdirectory(${PLUGIN_DIR})
-                # Set folder for the target (assuming target name matches plugin name)
-                if(TARGET ${PLUGIN_NAME})
-                    set_property(TARGET ${PLUGIN_NAME} PROPERTY FOLDER "external")
-                    # Add dependency on MQ2Main
-                    add_dependencies(${PLUGIN_NAME} MQ2Main)
-                endif()
-            else()
-                # Priority 2: Find all vcxproj files recursively
-                file(GLOB_RECURSE PLUGIN_VCXPROJS "${PLUGIN_DIR}/*.vcxproj")
-
-                # First pass: count compatible vcxprojs
-                set(COMPATIBLE_COUNT 0)
-                foreach(VCXPROJ_FILE ${PLUGIN_VCXPROJS})
-                    file(READ "${VCXPROJ_FILE}" VCXPROJ_CONTENT)
-
-                    set(PLATFORM_MATCH FALSE)
-                    if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
-                        if(VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|x64\"")
-                            set(PLATFORM_MATCH TRUE)
-                        endif()
-                    elseif(CMAKE_GENERATOR_PLATFORM STREQUAL "Win32")
-                        if(VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|Win32\"")
-                            set(PLATFORM_MATCH TRUE)
-                        endif()
-                    endif()
-
-                    if(PLATFORM_MATCH)
-                        math(EXPR COMPATIBLE_COUNT "${COMPATIBLE_COUNT} + 1")
-                    endif()
-                endforeach()
-
-                # Second pass: add projects with appropriate folder structure
-                foreach(VCXPROJ_FILE ${PLUGIN_VCXPROJS})
-                    # Read the vcxproj file to check if it supports the current architecture
-                    file(READ "${VCXPROJ_FILE}" VCXPROJ_CONTENT)
-
-                    # Check if the vcxproj contains the current platform
-                    set(PLATFORM_MATCH FALSE)
-                    if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64")
-                        if(VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|x64\"")
-                            set(PLATFORM_MATCH TRUE)
-                        endif()
-                    elseif(CMAKE_GENERATOR_PLATFORM STREQUAL "Win32")
-                        if(VCXPROJ_CONTENT MATCHES "ProjectConfiguration Include=\"[^\"]*\\|Win32\"")
-                            set(PLATFORM_MATCH TRUE)
-                        endif()
-                    endif()
-
-                    if(PLATFORM_MATCH)
-                        # Extract project name from vcxproj filename
-                        get_filename_component(PROJECT_NAME ${VCXPROJ_FILE} NAME_WE)
-
-                        # Get directory containing the vcxproj
-                        get_filename_component(VCXPROJ_DIR ${VCXPROJ_FILE} DIRECTORY)
-
-                        # Build the project location relative to CMAKE_CURRENT_SOURCE_DIR
-                        file(RELATIVE_PATH PROJECT_LOCATION ${CMAKE_CURRENT_SOURCE_DIR} ${VCXPROJ_DIR})
-
-                        # Determine folder structure based on number of compatible projects
-                        if(COMPATIBLE_COUNT EQUAL 1)
-                            # Single project: place directly in external folder
-                            set(PROJECT_PREFIX "external")
-                        else()
-                            # Multiple projects: organize under external/PluginName/...
-                            # Get relative path from PLUGIN_DIR to vcxproj directory
-                            file(RELATIVE_PATH RELATIVE_PATH ${PLUGIN_DIR} ${VCXPROJ_DIR})
-
-                            if(RELATIVE_PATH STREQUAL "" OR RELATIVE_PATH STREQUAL ".")
-                                set(PROJECT_PREFIX "external/${PLUGIN_NAME}")
-                            else()
-                                # Replace backslashes with forward slashes for folder hierarchy
-                                string(REPLACE "\\" "/" RELATIVE_PATH_CLEAN ${RELATIVE_PATH})
-                                set(PROJECT_PREFIX "external/${PLUGIN_NAME}/${RELATIVE_PATH_CLEAN}")
-                            endif()
-                        endif()
-
-                        message(STATUS "Adding custom plugin vcxproj: ${PROJECT_NAME} → ${PROJECT_PREFIX}")
-                        add_vcxproj(${PROJECT_LOCATION} ${PROJECT_NAME} ${PROJECT_PREFIX} MQ2Main)
-                    else()
-                        get_filename_component(PROJECT_NAME ${VCXPROJ_FILE} NAME_WE)
-                        message(STATUS "Skipping ${PROJECT_NAME} (incompatible architecture)")
-                    endif()
-                endforeach()
-            endif()
-        endif()
-    endforeach()
+    add_subdirectory(plugins)
 endif()
 
 # Add tests
@@ -293,6 +374,9 @@ if(MQ_BUILD_TESTS)
     add_vcxproj(src/tests/Actors Actors "core/applications/tests")
     add_vcxproj(src/tests/NamedPipeClient NamedPipeClient "core/applications/tests")
 endif()
+
+# Finalize vcpkg installation - merge all manifests and install packages, must be called after all add_vcxproj
+finalize_vcpkg_installation()
 
 # Print configuration summary
 message(STATUS "")

@@ -24,9 +24,11 @@
 *.vspscc
 *.zip
 .vs/
+.idea/
+.claude/
 
-build/
-build_*/
+/build/
+/build_*/
 packages/
 
 # CMake generated files
@@ -36,9 +38,6 @@ cmake_install.cmake
 *.cmake.in
 CTestTestfile.cmake
 _deps/
-
-# Auto-generated CMakeLists for custom plugins
-plugins/**/CMakeLists.txt.generated
 
 UpgradeLog.htm
 
