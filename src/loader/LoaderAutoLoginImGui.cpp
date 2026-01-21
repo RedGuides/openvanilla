@@ -203,6 +203,7 @@ template <typename Info>
 static void DefaultCombo(Info& info, const Action& select_action)
 {
 	static Info selected;
+	ImGui::PushID(&selected);
 
 	static constexpr std::string_view hidden_prefix = "##";
 	const auto width = ImGui::CalcItemWidth()
@@ -265,6 +266,8 @@ static void DefaultCombo(Info& info, const Action& select_action)
 		ImGui::SameLine(0.f, ImGui::GetStyle().ItemInnerSpacing.x);
 		ImGui::TextUnformatted(JoinLabels<Info::label>::literal);
 	}
+
+	ImGui::PopID();
 }
 
 static bool IsEQGameInFolder(const std::string& path)
@@ -966,7 +969,7 @@ void EditBehavior(ProfileInfo& profileInfo, const char* name, const Action& ok_a
 				{
 					profileInfo.characterName = profileInfo.Character.Character;
 					profileInfo.serverName = profileInfo.Character.Server;
-					login::db::ReadAccount(profileInfo);
+					login::db::ReadAccount(profileInfo, true);
 				}
 			});
 
