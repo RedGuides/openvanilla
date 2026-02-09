@@ -338,5 +338,5 @@
 	branch = master
 [submodule "plugins/MQ2Discord"]
 	path = plugins/MQ2Discord
-	url = https://github.com/brainiac/mq2discord.git
+	url = https://github.com/RedGuides/MQ2Discord.git
 	branch = master
