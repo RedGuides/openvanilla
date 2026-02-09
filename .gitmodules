@@ -94,7 +94,7 @@
 	branch = master
 [submodule "plugins/MQ2Discord"]
 	path = plugins/MQ2Discord
-	url = https://gitlab.com/alynel/MQ2Discord.git
+	url = https://github.com/RedGuides/MQ2Discord.git
 	branch = master
 [submodule "plugins/MQ2DPSAdv"]
 	path = plugins/MQ2DPSAdv
