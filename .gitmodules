@@ -92,10 +92,6 @@
 	path = plugins/MQ2Debuffs
 	url = https://github.com/RedGuides/MQ2Debuffs.git
 	branch = master
-[submodule "plugins/MQ2Discord"]
-	path = plugins/MQ2Discord
-	url = https://gitlab.com/alynel/MQ2Discord.git
-	branch = master
 [submodule "plugins/MQ2DPSAdv"]
 	path = plugins/MQ2DPSAdv
 	url = https://github.com/RedGuides/MQ2DPSAdv.git
@@ -339,4 +335,8 @@
 [submodule "plugins/MQ2WinTitle"]
 	path = plugins/MQ2WinTitle
 	url = https://github.com/RedGuides/MQ2WinTitle.git
+	branch = master
+[submodule "plugins/MQ2Discord"]
+	path = plugins/MQ2Discord
+	url = https://github.com/brainiac/mq2discord.git
 	branch = master
