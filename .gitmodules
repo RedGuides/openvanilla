@@ -340,3 +340,7 @@
 	path = plugins/MQ2WinTitle
 	url = https://github.com/RedGuides/MQ2WinTitle.git
 	branch = master
+[submodule "plugins/MQSearchItem"]
+	path = plugins/MQSearchItem
+	url = https://github.com/jessebevil/MQSearchItem.git
+	branch = main
