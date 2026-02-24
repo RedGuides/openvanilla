@@ -340,3 +340,7 @@
 	path = plugins/MQ2Discord
 	url = https://github.com/RedGuides/MQ2Discord.git
 	branch = master
+[submodule "plugins/MQRemote"]
+	path = plugins/MQRemote
+	url = https://github.com/peonMQ/MQRemote
+	branch = main
