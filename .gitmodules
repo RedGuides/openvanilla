@@ -344,3 +344,7 @@
 	path = plugins/MQSearchItem
 	url = https://github.com/jessebevil/MQSearchItem.git
 	branch = main
+[submodule "plugins/MQRemote"]
+	path = plugins/MQRemote
+	url = https://github.com/peonMQ/MQRemote
+	branch = main
