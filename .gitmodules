@@ -340,3 +340,7 @@
 	path = plugins/MQ2WinTitle
 	url = https://github.com/RedGuides/MQ2WinTitle.git
 	branch = master
+[submodule "plugins/MQRemote"]
+	path = plugins/MQRemote
+	url = https://github.com/peonMQ/MQRemote
+	branch = main
