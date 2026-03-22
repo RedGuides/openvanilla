@@ -1,6 +1,25 @@
-## 3/4/2026 (test)
+## 3/22/2026
 
 Update for test patch
+
+
+## 3/14/2026
+
+- Fix Me.RangeReady
+
+
+## 3/13/2026
+
+Update for live patch
+
+### Bug Fixes
+
+- Fix crash in ItemDisplayWnd
+
+
+## 3/5/2026
+
+Add support for teek and tormax
 
 
 ## 3/1/2026
