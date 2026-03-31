@@ -1,5 +1,4 @@
-# Database files
-*.db
+# Database temp files (the .db itself is tracked in data/)
 *.db-wal
 *.db-shm
 
