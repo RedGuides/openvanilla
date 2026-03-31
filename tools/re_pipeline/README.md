@@ -36,6 +36,17 @@ batch_bindiff.sh               Run BinDiff on all consecutive build pairs
 distributed_scan_sequential.sh Distribute rizin scans across multiple hosts
 ```
 
+## Reference Hardware
+
+Timing numbers in this document were measured on:
+
+- **CPU**: 2x Intel Xeon Gold 6240 @ 2.60GHz (72 threads total)
+- **RAM**: 754 GB DDR4
+- **Storage**: NVMe SSD
+- **OS**: Arch Linux
+
+Ghidra analysis and BinDiff are memory-hungry. Expect longer runtimes with less than 32 GB RAM or fewer than 8 cores. The distributed scanning scripts can offload rizin work to additional hosts if available.
+
 ## Prerequisites
 
 - **Ghidra 12.x** with BinExport extension installed at `/opt/ghidra/`
