@@ -1,0 +1,37 @@
+# Database files
+*.db
+*.db-wal
+*.db-shm
+
+# Disassembly caches
+disasm_cache/
+unlisted_disasm_cache/
+full_scan_cache/
+
+# Pipeline run output
+pipeline_runs/
+batch_bindiff_logs/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Binary files (should not be in repo)
+*.exe
+*.dll
+*.BinExport
+*.BinDiff
+
+# Ghidra project files
+*.gpr
+*.rep/
+
+# Editor/OS files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Scan result data files (large, regenerable)
+*_scan_results.txt

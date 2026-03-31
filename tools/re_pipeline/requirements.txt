@@ -1,0 +1,9 @@
+# EQ RE Pipeline - Python Dependencies
+#
+# All scripts use Python 3.10+ stdlib only. No pip packages required.
+#
+# External tool dependencies (not Python):
+#   - rizin (with rz-ghidra plugin) - disassembly
+#   - Ghidra 12.x (with BinExport extension) - binary analysis
+#   - BinDiff 8 - function matching
+#   - JDK 21 - required by Ghidra headless
