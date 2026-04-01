@@ -3,11 +3,11 @@
     url = https://github.com/Krakty/eqlib.git
 [submodule "contrib/vcpkg"]
 	path = contrib/vcpkg
-	url = https://github.com/macroquest/vcpkg.git
+	url = https://github.com/Krakty/vcpkg.git
 	branch = macroquest
 [submodule "data/lua/IntegrationTests"]
 	path = src/plugins/lua/lua/IntegrationTests
-	url = https://github.com/macroquest/integration-tests.git
+	url = https://github.com/Krakty/integration-tests.git
 [submodule "plugins/MQ2AASpend"]
 	path = plugins/MQ2AASpend
 	url = https://github.com/RedGuides/MQ2AASpend.git
@@ -62,7 +62,7 @@
 	branch = master
 [submodule "plugins/MQ2Camera"]
 	path = plugins/MQ2Camera
-	url = https://github.com/brainiac/MQ2Camera.git
+	url = https://github.com/Krakty/MQ2Camera.git
 	branch = master
 [submodule "plugins/MQ2Cast"]
 	path = plugins/MQ2Cast
@@ -98,7 +98,7 @@
 	branch = master
 [submodule "plugins/MQ2EasyFind"]
 	path = plugins/MQ2EasyFind
-	url = https://github.com/brainiac/MQ2EasyFind.git
+	url = https://github.com/Krakty/MQ2EasyFind.git
 	branch = master
 [submodule "plugins/MQ2EQBC"]
 	path = plugins/MQ2EQBC
@@ -174,7 +174,7 @@
 	branch = master
 [submodule "plugins/MQ2Nav"]
 	path = plugins/MQ2Nav
-	url = https://github.com/brainiac/MQ2Nav.git
+	url = https://github.com/Krakty/MQ2Nav.git
 	branch = master
 [submodule "plugins/MQ2NetBots"]
 	path = plugins/MQ2NetBots
