@@ -242,7 +242,7 @@
 	branch = master
 [submodule "plugins/MQ2ShellCmd"]
 	path = plugins/MQ2ShellCmd
-	url = https://gitlab.com/Knightly1/MQ2ShellCmd.git
+	url = https://github.com/Krakty/MQ2ShellCmd.git
 	branch = master
 [submodule "plugins/MQ2SpawnMaster"]
 	path = plugins/MQ2SpawnMaster
@@ -258,7 +258,7 @@
 	branch = master
 [submodule "plugins/MQ2SQLite"]
 	path = plugins/MQ2SQLite
-	url = https://gitlab.com/Knightly1/MQ2SQLite.git
+	url = https://github.com/Krakty/MQ2SQLite.git
 	branch = master
 [submodule "plugins/MQ2Status"]
 	path = plugins/MQ2Status
@@ -302,7 +302,7 @@
 	branch = master
 [submodule "plugins/MQMountClassicModels"]
 	path = plugins/MQMountClassicModels
-	url = https://github.com/Knightly1/MQMountClassicModels.git
+	url = https://github.com/Krakty/MQMountClassicModels.git
 	branch = main
 [submodule "plugins/MQ2Tracking"]
 	path = plugins/MQ2Tracking
@@ -310,7 +310,7 @@
 	branch = master
 [submodule "plugins/MQTextToSpeech"]
 	path = plugins/MQTextToSpeech
-	url = https://github.com/Knightly1/MQTextToSpeech.git
+	url = https://github.com/Krakty/MQTextToSpeech.git
 	branch = main
 [submodule "plugins/MQ2MeshManager"]
 	path = plugins/MQ2MeshManager
