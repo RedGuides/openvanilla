@@ -109,14 +109,29 @@ sed -i "s/MAXMEM=2G/MAXMEM=$GHIDRA_HEAP/" "$HEADLESS"
 sed -i "s|\"\${SCRIPT_DIR}\"|\"$GHIDRA_DIR/support\"|" "$HEADLESS"
 chmod +x "$HEADLESS"
 
-# ── Step 1: Ghidra Headless Analysis + BinExport ─────────────────────
-echo "[Step 1/4] Ghidra analysis + BinExport (parallel, ~20 min)..."
+# Xref targets for ExtractReferences (must exist before Ghidra; xref runs in same JVM as old binary BinExport)
+python3 -c "
+import re
+with open('$OLD_HEADER') as f:
+    with open('$WORK_DIR/xref_targets.txt', 'w') as out:
+        for line in f:
+            m = re.match(r'#define\s+(\w+)_x\s+(0x[0-9a-fA-F]+)', line.strip())
+            if m:
+                out.write(f'{m.group(1)} {m.group(2)}\n')
+"
+
+# ── Step 1/4: Ghidra headless: BinExport + xref extraction (old) in one JVM; BinExport (new) ──
+echo "[Step 1/4] Ghidra analysis + BinExport + xref extraction (parallel, ~20 min)..."
+echo "  Old binary: BinExport then ExtractReferences (same session). Log: $WORK_DIR/old_ghidra.log"
+echo "  New binary: BinExport only. Log: $WORK_DIR/new_ghidra.log"
 START_TIME=$SECONDS
 
-# Launch both in parallel
+# Old binary: two postScripts — BinExport, then ExtractReferences (avoids reopening project; NotOwnerException on second open).
+# Redirect only (no tee) so $OLD_PID is analyzeHeadless and wait returns its real exit code.
 "$HEADLESS" "$WORK_DIR/old_project" OldEQ \
     -import "$OLD_BINARY" \
     -postScript "$BINEXPORT_SCRIPT" "$WORK_DIR/output/old.BinExport" \
+    -postScript ExtractReferences.java "$WORK_DIR/xref_targets.txt" "$WORK_DIR/old_xrefs.json" \
     -scriptPath "$(dirname "$BINEXPORT_SCRIPT")" \
     > "$WORK_DIR/old_ghidra.log" 2>&1 &
 OLD_PID=$!
@@ -128,35 +143,46 @@ OLD_PID=$!
     > "$WORK_DIR/new_ghidra.log" 2>&1 &
 NEW_PID=$!
 
-echo "  Old binary analysis PID: $OLD_PID"
+echo "  Old binary analysis PID: $OLD_PID (analyzeHeadless; log $WORK_DIR/old_ghidra.log)"
 echo "  New binary analysis PID: $NEW_PID"
 echo "  Waiting for both to complete..."
 
-# Monitor progress
 FAILED=0
 wait $OLD_PID || FAILED=1
 if [[ $FAILED -eq 1 ]]; then
-    echo "  ERROR: Old binary analysis failed. Check $WORK_DIR/old_ghidra.log"
+    echo "  ERROR: Old binary analysis failed. Last lines of $WORK_DIR/old_ghidra.log:"
+    tail -20 "$WORK_DIR/old_ghidra.log" 2>/dev/null || true
     exit 1
 fi
 echo "  Old binary: done ($(( SECONDS - START_TIME ))s)"
 
 wait $NEW_PID || FAILED=1
 if [[ $FAILED -eq 1 ]]; then
-    echo "  ERROR: New binary analysis failed. Check $WORK_DIR/new_ghidra.log"
+    echo "  ERROR: New binary analysis failed. Last lines of $WORK_DIR/new_ghidra.log:"
+    tail -20 "$WORK_DIR/new_ghidra.log" 2>/dev/null || true
     exit 1
 fi
 echo "  New binary: done ($(( SECONDS - START_TIME ))s)"
 
-# Verify exports exist
+# Do not validate *.gpr size: Ghidra often leaves .gpr empty/minimal; real project data lives under *.rep.
+# Step 1 success is gated by BinExport + old_xrefs.json below.
+
 [[ -f "$WORK_DIR/output/old.BinExport" ]] || { echo "ERROR: old BinExport not created"; exit 1; }
 [[ -f "$WORK_DIR/output/new.BinExport" ]] || { echo "ERROR: new BinExport not created"; exit 1; }
+
+[[ -f "$WORK_DIR/old_xrefs.json" ]] || { echo "ERROR: old_xrefs.json not created (ExtractReferences). Check $WORK_DIR/old_ghidra.log"; exit 1; }
+OLD_XREF_SIZE=$(stat -c%s "$WORK_DIR/old_xrefs.json")
+if [[ "$OLD_XREF_SIZE" -eq 0 ]]; then
+    echo "ERROR: old_xrefs.json is empty. Check $WORK_DIR/old_ghidra.log"
+    exit 1
+fi
 
 OLD_SIZE=$(stat -c%s "$WORK_DIR/output/old.BinExport")
 NEW_SIZE=$(stat -c%s "$WORK_DIR/output/new.BinExport")
 echo "  Exports: old=${OLD_SIZE} bytes, new=${NEW_SIZE} bytes"
+echo "  Xrefs:   old_xrefs.json=${OLD_XREF_SIZE} bytes"
 
-# ── Step 2: BinDiff ──────────────────────────────────────────────────
+# ── Step 2/4: BinDiff ────────────────────────────────────────────────
 echo ""
 echo "[Step 2/4] BinDiff function matching..."
 DIFF_START=$SECONDS
@@ -175,35 +201,9 @@ echo "  $MATCHED"
 echo "  $SIMILARITY"
 echo "  Completed in $(( SECONDS - DIFF_START ))s"
 
-# ── Step 3: Extract Cross-References ─────────────────────────────────
+# ── Step 3/4: Address translation ─────────────────────────────────────
 echo ""
-echo "[Step 3/5] Extracting cross-references from old binary..."
-XREF_START=$SECONDS
-XREF_SCRIPT="$SCRIPT_DIR/ghidra/ExtractReferences.java"
-
-# Generate target address list
-python3 -c "
-import re
-with open('$OLD_HEADER') as f:
-    with open('$WORK_DIR/xref_targets.txt', 'w') as out:
-        for line in f:
-            m = re.match(r'#define\s+(\w+)_x\s+(0x[0-9a-fA-F]+)', line.strip())
-            if m:
-                out.write(f'{m.group(1)} {m.group(2)}\n')
-"
-
-"$HEADLESS" "$WORK_DIR/old_project" OldEQ \
-    -process eqgame.exe -noanalysis \
-    -scriptPath "$(dirname "$XREF_SCRIPT")" \
-    -postScript ExtractReferences.java "$WORK_DIR/xref_targets.txt" "$WORK_DIR/old_xrefs.json" \
-    > "$WORK_DIR/old_xref.log" 2>&1
-
-[[ -f "$WORK_DIR/old_xrefs.json" ]] || { echo "ERROR: xref extraction failed. Check $WORK_DIR/old_xref.log"; exit 1; }
-echo "  Xrefs extracted in $(( SECONDS - XREF_START ))s"
-
-# ── Step 4: Address Translation ──────────────────────────────────────
-echo ""
-echo "[Step 4/5] Translating eqgame.h addresses..."
+echo "[Step 3/4] Translating eqgame.h addresses..."
 
 MATCHER_ARGS=(
     --old-binary "$OLD_BINARY"
@@ -219,7 +219,7 @@ MATCHER_ARGS=(
 
 python3 "$MATCHER_SCRIPT" "${MATCHER_ARGS[@]}"
 
-# ── Step 5: Output ───────────────────────────────────────────────────
+# ── Step 4/4: Results ────────────────────────────────────────────────
 echo ""
 echo "[Step 4/4] Results"
 echo "============================================================"

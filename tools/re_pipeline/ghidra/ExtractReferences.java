@@ -11,9 +11,13 @@
 // Input: text file with "NAME 0xADDR" per line
 // Output: JSON with xref details
 //
-// Usage (headless):
-//   analyzeHeadless PROJECT_DIR PROJECT_NAME -process binary.exe \
-//     -noanalysis -postScript ExtractReferences.java input.txt output.json
+// Usage (headless) — either after -import (second -postScript after BinExport), or legacy:
+//   analyzeHeadless PROJECT_DIR PROJECT_NAME -import binary.exe \
+//     -postScript ExportViaReflection.java out.BinExport \
+//     -postScript ExtractReferences.java input.txt output.json \
+//     -scriptPath /path/to/ghidra
+//   analyzeHeadless PROJECT_DIR PROJECT_NAME -process binary.exe -noanalysis \
+//     -postScript ExtractReferences.java input.txt output.json
 
 import ghidra.app.script.GhidraScript;
 import ghidra.program.model.address.*;
@@ -57,7 +61,7 @@ public class ExtractReferences extends GhidraScript {
         AddressSpace space = currentProgram.getAddressFactory().getDefaultAddressSpace();
 
         StringBuilder json = new StringBuilder("{\n");
-        int totalXrefs = 0;
+        final int[] totalXrefs = {0};
 
         for (int i = 0; i < targets.size(); i++) {
             String name = targets.get(i)[0];
@@ -70,10 +74,8 @@ public class ExtractReferences extends GhidraScript {
             json.append(String.format("    \"address\": \"0x%X\",\n", targetLong));
             json.append("    \"xrefs\": [");
 
-            ReferenceIterator refs = refMgr.getReferencesTo(targetAddr);
-            boolean first = true;
-
-            for (Reference ref : refs) {
+            final boolean[] first = {true};
+            ReferenceManagerUtil.forEachReferenceTo(refMgr, targetAddr, ref -> {
                 Address fromAddr = ref.getFromAddress();
                 String refType = ref.getReferenceType().getName();
 
@@ -93,19 +95,21 @@ public class ExtractReferences extends GhidraScript {
                 }
                 refsFromJson.append("]");
 
-                if (!first) json.append(",");
+                if (!first[0]) {
+                    json.append(",");
+                }
                 json.append(String.format("\n      {\"from\": \"0x%X\", \"type\": \"%s\", " +
                         "\"mnemonic\": \"%s\", \"refs_from\": %s}",
                         fromAddr.getOffset(), refType, mnemonic, refsFromJson));
-                first = false;
-                totalXrefs++;
-            }
+                first[0] = false;
+                totalXrefs[0]++;
+            });
 
             json.append("\n    ]\n  }");
 
             if ((i + 1) % 50 == 0) {
                 println("  Progress: " + (i + 1) + "/" + targets.size() +
-                        " (" + totalXrefs + " xrefs)");
+                        " (" + totalXrefs[0] + " xrefs)");
             }
         }
 
@@ -115,7 +119,7 @@ public class ExtractReferences extends GhidraScript {
         writer.print(json.toString());
         writer.close();
 
-        println("ExtractReferences: " + totalXrefs + " xrefs for " + targets.size() +
+        println("ExtractReferences: " + totalXrefs[0] + " xrefs for " + targets.size() +
                 " targets -> " + outputPath);
     }
 }

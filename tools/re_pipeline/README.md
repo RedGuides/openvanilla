@@ -9,9 +9,10 @@ The core idea: track accessor functions (getters/setters) that touch a single st
 ```
 patch_day_pipeline.sh          Main entry point for patch day
   |
-  +-- Ghidra headless analysis (parallel, 2 binaries)
-  |     +-- ghidra/ExportViaReflection.java   BinExport output
-  |     +-- ghidra/ExtractReferences.java     Cross-reference extraction
+  +-- Ghidra headless (parallel, 2 binaries)
+  |     +-- Old binary: ExportViaReflection.java (BinExport) then ExtractReferences.java
+  |     |              in one JVM (no second project open)
+  |     +-- New binary: BinExport only
   |
   +-- BinDiff (old.BinExport vs new.BinExport)
   |
@@ -73,11 +74,18 @@ When a new EQ patch drops:
 
 The pipeline takes about 45 minutes total: ~20 min for Ghidra analysis (two binaries in parallel), ~5 min for BinDiff, ~20 min for address translation with sub-function matching.
 
+### Patch day troubleshooting
+
+- **Do not `kill -9` Ghidra** while Step 1 is running; orphaned JVMs can leave inconsistent project state. **Do not** use zero-byte **`*.gpr`** as a health signal — Ghidra often keeps `.gpr` minimal while storing data under **`*.rep`**; the pipeline validates **BinExport** + **`old_xrefs.json`** instead.
+- **Work directory**: Default is under `/tmp`. If your environment evicts `/tmp` or you need a persistent path, pass **`--work-dir`** to a directory on a normal local filesystem.
+- **Logs**: Both Ghidra runs write only to **`old_ghidra.log`** and **`new_ghidra.log`** under the work dir (no live `tee` to the terminal, so **`wait`** reflects the real **`analyzeHeadless`** exit code). On failure, the script prints the last lines of the relevant log.
+- **Last resort**: If Ghidra still misbehaves with project ownership, ensure `java -XshowSettings:properties` reports sensible `user.name` / `user.home`; exotic environments can set `JAVA_TOOL_OPTIONS=-Duser.name=... -Duser.home=...` before running the pipeline.
+
 ## Script Reference
 
 ### patch_day_pipeline.sh
 
-The main pipeline. Runs Ghidra headless analysis on both binaries (parallel), runs BinDiff, extracts cross-references, then translates all eqgame.h addresses.
+The main pipeline. Runs Ghidra headless on both binaries in parallel (old: BinExport + xref extraction in one session; new: BinExport only), runs BinDiff, then translates all `eqgame.h` addresses with `eqgame_h_generator.py`.
 
 ```bash
 ./patch_day_pipeline.sh \
@@ -92,10 +100,9 @@ The main pipeline. Runs Ghidra headless analysis on both binaries (parallel), ru
 ```
 
 Steps:
-1. Ghidra headless analysis + BinExport on both binaries (parallel)
+1. Ghidra headless: **old** binary — BinExport then `ExtractReferences` (same JVM); **new** binary — BinExport only (parallel)
 2. BinDiff function matching
-3. Cross-reference extraction from old binary
-4. Three-layer address translation via `eqgame_h_generator.py`
+3. Three-layer address translation via `eqgame_h_generator.py` (uses `old_xrefs.json` from step 1)
 
 ### eq_xref_db.py
 
@@ -278,6 +285,7 @@ These are used internally or for specific analysis tasks:
 ### Ghidra Scripts (ghidra/)
 
 - `ExportViaReflection.java` - BinExport via reflection (works around Ghidra extension API quirks)
+- `ReferenceManagerUtil.java` - Shared helper: calls `ReferenceManager.getReferencesTo` via reflection so xref scripts work across Ghidra versions (return type differs by release)
 - `ExtractReferences.java` - Extract code/data cross-references for target addresses
 - `ExtractXrefs.java` - Simpler xref extraction variant
 

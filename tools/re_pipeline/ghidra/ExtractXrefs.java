@@ -50,32 +50,32 @@ public class ExtractXrefs extends GhidraScript {
 
         // For each target, find all xrefs TO it
         StringBuilder json = new StringBuilder("{\n");
-        int found = 0;
+        final int[] found = {0};
         int total = 0;
 
         for (int i = 0; i < targets.size(); i++) {
             long targetAddr = targets.get(i);
             Address addr = defaultSpace.getAddress(targetAddr);
 
-            Reference[] refs = refMgr.getReferencesTo(addr);
-
             if (i > 0) json.append(",\n");
             json.append(String.format("  \"0x%X\": [", targetAddr));
 
-            boolean first = true;
-            for (Reference ref : refs) {
+            final boolean[] first = {true};
+            ReferenceManagerUtil.forEachReferenceTo(refMgr, addr, ref -> {
                 Address fromAddr = ref.getFromAddress();
-                if (!first) json.append(", ");
+                if (!first[0]) {
+                    json.append(", ");
+                }
                 json.append(String.format("\"0x%X\"", fromAddr.getOffset()));
-                first = false;
-                found++;
-            }
+                first[0] = false;
+                found[0]++;
+            });
             json.append("]");
             total++;
 
             if ((i + 1) % 100 == 0) {
                 println("  Progress: " + (i + 1) + "/" + targets.size() +
-                        " (" + found + " xrefs found)");
+                        " (" + found[0] + " xrefs found)");
             }
         }
 
@@ -86,7 +86,7 @@ public class ExtractXrefs extends GhidraScript {
         writer.print(json.toString());
         writer.close();
 
-        println("ExtractXrefs: wrote " + found + " xrefs for " + total +
+        println("ExtractXrefs: wrote " + found[0] + " xrefs for " + total +
                 " addresses to " + outputPath);
     }
 }
