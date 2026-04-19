@@ -1,3 +1,28 @@
+## 4/18/2026
+
+### Bug fixes
+
+- ROF2: Add fix for D3DXEffects::CEffect::FindValue crash when game client goes over 2GB of used memory
+
+
+## 4/16/2026
+
+### Bug fixes
+
+- Fix issue where /mapfilter commands would not take effect until the map plugin was reloaded
+
+## 4/11/2026
+
+- PackageMan bug fixes
+
+## 4/10/2026
+
+### New Plugin Callbacks
+
+Added two new callbacks for plugins - OnLoginFrontendEntered and OnLoginFrontendExited
+both have been added to the mkplugin template and will be generated when mkplugin is
+run.
+
 ## 3/22/2026
 
 ### Per-Character ImGui Configuration
