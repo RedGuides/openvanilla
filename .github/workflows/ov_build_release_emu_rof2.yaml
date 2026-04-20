@@ -1,0 +1,15 @@
+name: OV Build MacroQuest Emu RoF2 Release
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  call_build:
+    uses: ./.github/workflows/ov_build_release_shared.yaml
+    with:
+      client_target: emu-rof2
+    secrets: inherit
