@@ -11,31 +11,52 @@ on:
       client_target:
         required: true
         type: choice
+        # These should also be updated in the version_rev map below when adding new targets
         options:
-        - live
-        - test
-        - emu
+        - emu-rof2
+        - emu-tob
+        - beta-emu-rof2
+        - beta-emu-tob
 
 env:
-  platform: "${{ inputs.client_target == 'emu' && 'Win32' || 'x64' }}"
+  platform: "${{ contains(inputs.client_target, 'rof2') && 'Win32' || 'x64' }}"
   scoop_packages: "sentry-cli"
+  # Version revision map -- update this when adding new client targets
+  version_rev: >-
+    ${{ fromJSON('{
+      "live":          1,
+      "test":          2,
+      "beta-emu-rof2": 3,
+      "emu-rof2":      4,
+      "beta-emu-tob":  5,
+      "emu-tob":       6
+    }')[inputs.client_target] }}
 
 jobs:
   build:
     if: github.repository == 'macroquest/macroquest'
     runs-on: [fast, self-hosted, Windows, X64]
     steps:
+      - name: Validate version revision
+        if: env.version_rev == ''
+        run: |
+          echo "::error:: Target '${{ inputs.client_target }}' has no version_rev defined. Update the version revision map in the env block."
+          exit 1
+
       - name: Install and cache PowerShell modules
         uses: potatoqualitee/psmodulecache@v6.2.1
         with:
           modules-to-cache: powershell-yaml
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Reset eqlib
         run: git -C src/eqlib reset --hard
         continue-on-error: true
+
+      - name: Sync submodule URLs
+        run: git submodule sync --recursive
 
       - name: Update builtin submodules
         run: git submodule update --init --recursive --depth=1
@@ -72,11 +93,10 @@ jobs:
             }
           }
 
-      - name: Checkout plugins that work on Emu clients
-        #if: ${{ inputs.client_target == 'emu' }}
+      - name: Checkout plugins that work on RoF2 clients
         shell: pwsh
         run: |
-          $start = Select-String -Path plugin-quick-list.md -Pattern "^# Emu only" -CaseSensitive
+          $start = Select-String -Path plugin-quick-list.md -Pattern "^# RoF2 only" -CaseSensitive
           $end = Select-String -Path plugin-quick-list.md -Pattern "^(#|``)" | Where-Object { $_.LineNumber -gt $start.LineNumber } | Select-Object -First 1
           $content = Get-Content plugin-quick-list.md | Select-Object -Index ($start.LineNumber..($end.LineNumber - 2))
           $content | ForEach-Object {
@@ -87,10 +107,42 @@ jobs:
             }
           }
 
+      - name: Checkout beta branch for plugins
+        if: contains(inputs.client_target, 'beta')
+        shell: pwsh
+        run: |
+          Get-ChildItem plugins -Directory | ForEach-Object { Write-Host "Checking for beta branch in $($_.Name)"; git -C "$($_.FullName)" checkout beta 2>$null }
+          exit 0
+
       - name: Update Plugin Submodules
         shell: pwsh
         run: |
           Get-ChildItem plugins -Directory | ForEach-Object { Write-Host "$($_.Name)"; git -C "$($_.FullName)" submodule update --init --recursive --depth=1 }
+
+      - name: Validate Plugin Projects
+        shell: pwsh
+        run: |
+          $result = & "${{ github.workspace }}/tools/build_scripts/Validate_Plugin_Projects.ps1" -PluginsDirectory "${{ github.workspace }}/plugins" -Whitelist @("MQ2Nav")
+          $exitCode = $LASTEXITCODE
+          $discordMessage = ($result -join "`n")
+          if ($discordMessage.Length -gt 4000) {
+            $discordMessage = $discordMessage.Substring(0, 4000)
+          }
+          if ($exitCode -ne 0) {
+            Write-Warning $discordMessage
+            [System.Collections.ArrayList]$embedArray = @()
+            $embedObject = [PSCustomObject]@{
+                color = "15548997"
+                title = "Plugin validation failed (${{ github.ref_name }})"
+                description = $discordMessage
+            }
+            $embedArray.Add($embedObject) | Out-Null
+            $discordPayload = [PSCustomObject]@{
+                embeds = $embedArray
+            } | ConvertTo-Json
+            Invoke-RestMethod -Uri '${{ secrets.MQDISCORD_DEV_WEBHOOK }}' -Method Post -Body $discordPayload -ContentType 'application/json'
+            exit 1
+          }
 
       - name: Get SLN file from docs site
         shell: pwsh
@@ -111,6 +163,7 @@ jobs:
         run: |
           $versionFile = "src/main/MQVersionInfo.h"
           $versionInfo = Get-Content $versionFile
+          $versionInfo = $versionInfo -replace '#define MQMAIN_VERSION_REV\s+\d+', "#define MQMAIN_VERSION_REV   ${{ env.version_rev }}"
           $versionInfo = $versionInfo -replace '#define MQMAIN_VERSION_BUILD (\d+)', "#define MQMAIN_VERSION_BUILD ${{ github.run_number }}"
           $versionInfo = $versionInfo -replace '#define MQMAIN_GIT_HASH "(.*)"', "#define MQMAIN_GIT_HASH `"$(git rev-parse --short HEAD)`""
           $versionInfo | Set-Content $versionFile
@@ -165,7 +218,7 @@ jobs:
         if: false # Disable scoop since we're not using sentry integration
         # if: steps.check_scoop.outputs.scoop_ready != 'true'
         id: restore_scoop_cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: '~/scoop'
           key: ${{ runner.os }}-scoop-${{ steps.check_scoop.outputs.scoop_packages_hash }}
@@ -191,12 +244,12 @@ jobs:
           update_path: 'true'
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
         with:
           msbuild-architecture: x64
 
       - name: Setup NuGet
-        uses: nuget/setup-nuget@v2
+        uses: nuget/setup-nuget@v3
 
       - name: Restore NuGet packages
         run: |
@@ -215,7 +268,7 @@ jobs:
 
       - name: Restore vcpkg Cache
         if: steps.check_vcpkg.outputs.vcpkg_installed != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             contrib/vcpkg/buildtrees
@@ -249,7 +302,7 @@ jobs:
           sentry-cli debug-files upload --wait "${{ github.workspace }}\build\bin\Release"
 
       - name: Upload Symbols Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: symbols-${{ inputs.client_target }}
           path: build/bin/MacroQuest-Symbols.zip
@@ -286,7 +339,7 @@ jobs:
         run: echo "MQVERSION_INFO=$((Get-Item build/bin/release/MQ2Main.dll).VersionInfo.FileVersion)" >> $env:GITHUB_ENV
 
       - name: Restore Last Changelog
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/build/changelog/CHANGELOG.md
           key: changelog-${{ env.platform }}-${{ inputs.client_target }}-${{ github.run_id }}
@@ -318,12 +371,12 @@ jobs:
           Remove-Item -Force "${{ github.workspace }}/build/ReleaseNotes.md" -ErrorAction SilentlyContinue
           $ReleaseDescription | Out-File "${{ github.workspace }}/build/ReleaseNotes.md"
 
-      - name: Remove Release 'rel-${{ inputs.client_target }}'
+      - name: Remove Release '${{ github.ref_name }}'
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.MQGITBOT_AUTH }}
         run: |
-          $output = gh release delete rel-${{ inputs.client_target }} --yes 2>&1
+          $output = gh release delete ${{ github.ref_name }} --yes 2>&1
           if (!$? -And -Not($output -like "*release not found*")) {
             throw $output
           }
@@ -334,7 +387,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.MQGITBOT_AUTH }}
         run: |
-          gh release create rel-${{ inputs.client_target }} --title "MacroQuest (${{ inputs.client_target }} server) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" $(if ($${{ inputs.client_target == 'live' }}) {"--latest"} else {"--prerelease"}) build/bin/MacroQuest.zip
+          gh release create ${{ github.ref_name }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" $(if ($${{ inputs.client_target == 'emu-rof2' }}) {"--latest"} else {"--prerelease"}) build/bin/MacroQuest.zip
 
       - name: Update Published Version Information
         shell: pwsh
@@ -343,17 +396,24 @@ jobs:
           git clone "https://x-access-token:${{ secrets.MQGITBOT_AUTH }}@github.com/MacroQuest/MQCurrentVersions.git" "$versionDir"
           git -C "$versionDir" config user.email "mqgitbot@gmail.com"
           git -C "$versionDir" config user.name "MQGitBot"
-          git -C "$versionDir" checkout ${{ inputs.client_target }}
-          $branch_name = git -C "$versionDir" rev-parse --abbrev-ref HEAD
-          if ($branch_name -ne "${{ inputs.client_target }}") {
-            throw "Failed to checkout branch ${{ inputs.client_target }}"
+          $branch = "${{ inputs.client_target }}"
+          $remoteBranch = git -C "$versionDir" ls-remote --heads origin $branch
+          if ($remoteBranch) {
+            git -C "$versionDir" checkout $branch
+          } else {
+            git -C "$versionDir" checkout -b $branch
           }
           Set-Content -NoNewLine -Path "$versionDir/CurrentVersion.txt" -Value $env:MQVERSION_INFO
           git -C "$versionDir" add CurrentVersion.txt
           git -C "$versionDir" commit -m "Update ${{ inputs.client_target }} version to $($env:MQVERSION_INFO)"
-          git -C "$versionDir" push
+          if ($remoteBranch) {
+            git -C "$versionDir" push
+          } else {
+            git -C "$versionDir" push --set-upstream origin $branch
+          }
 
       - name: Send Discord Notice
+        shell: pwsh
         run: |
           [System.Collections.ArrayList]$embedArray = @()
           $embedObject = [PSCustomObject]@{
@@ -365,11 +425,11 @@ jobs:
           $discordPayload = [PSCustomObject]@{
               embeds = $embedArray
           } | ConvertTo-Json
-          Invoke-RestMethod -Uri ${{ secrets.MQDISCORD_WEBHOOK }} -Method Post -Body $discordPayload -ContentType 'application/json'
+          Invoke-RestMethod -Uri '${{ secrets.MQDISCORD_WEBHOOK }}' -Method Post -Body $discordPayload -ContentType 'application/json'
         continue-on-error: true
 
       - name: Handle LuaRocks Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             build/Lua
@@ -389,7 +449,7 @@ jobs:
           $LuaRockServerRoot = "$LuaRockServer"
           $LuaYaml = "$LuaRockServerRoot\mq_luarocks.yaml"
           $GitURL = "https://oauth2:${{ secrets.MQGITBOT_AUTH }}@github.com/macroquest/luarocks.git"
-          $Platform = "$(if ($${{ inputs.client_target == 'emu' }}) {"x86"} else {"x64"})"
+          $Platform = "$(if ($${{ contains(inputs.client_target, 'rof2')}}) {"x86"} else {"x64"})"
           $env:LUAROCKS_CONFIG = "$LuaRocksDir\luarocks_working_config_$($Platform).cfg"
           $systreeNode = "\$Platform"
           $vcpkg_mq = "${{ github.workspace }}\tools\build_scripts\vcpkg_mq.ps1"
@@ -478,7 +538,7 @@ jobs:
 
               # Load vcvars for luarocks
               $vcvars_txt = "${{ github.workspace }}\build\vcvars.txt"
-              $architecture = "$(if ($${{ inputs.client_target == 'emu' }}) {"x64_x86"} else {"x64"})"
+              $architecture = "$(if ($${{ contains(inputs.client_target, 'rof2') }}) {"x64_x86"} else {"x64"})"
               & cmd.exe /c "call `"$($env:ProgramFiles)\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat`" $architecture && set > `"$vcvars_txt`""
               Get-Content $vcvars_txt | ForEach-Object {
                 if ($_ -match "^(.*?)=(.*)$") {
@@ -550,8 +610,19 @@ jobs:
                 }
 
                 if (-NOT ($VersionSearch -eq $UpstreamVersionSearch)) {
-                    #TODO: Send to Discord
-                    Write-Warning "A newer version of $LuaRock exists upstream, the MQ moonrocks repository needs to be updated: (Ours: [$VersionSearch] Upstream: [$UpstreamVersionSearch])"
+                    $discordMessage = "A newer version of $LuaRock exists upstream, the MQ moonrocks repository needs to be updated: (Ours: [$VersionSearch] Upstream: [$UpstreamVersionSearch])"
+                    Write-Warning $discordMessage
+                    [System.Collections.ArrayList]$embedArray = @()
+                    $embedObject = [PSCustomObject]@{
+                        color = "16705372"
+                        title = "Newer version of Moonrock [$LuaRock] upstream (${{ github.ref_name }})"
+                        description = $discordMessage
+                    }
+                    $embedArray.Add($embedObject) | Out-Null
+                    $discordPayload = [PSCustomObject]@{
+                        embeds = $embedArray
+                    } | ConvertTo-Json
+                    Invoke-RestMethod -Uri '${{ secrets.MQDISCORD_DEV_WEBHOOK }}' -Method Post -Body $discordPayload -ContentType 'application/json'
                 }
 
                 $installModule = $false
@@ -584,7 +655,7 @@ jobs:
                             $_ | Out-File $LuaRocksDir/vcpkg_mq.txt
                         }
                         # Write-Debug "Running vcpkg_mq for dependencies..."
-                        & "$vcpkg_mq" -ProjectName LuaRocks -ProjectDirectory "$LuaRocksDir" -MQRoot "${{ github.workspace }}" -Platform $Platform -Toolchain v143
+                        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$vcpkg_mq" -ProjectName LuaRocks -ProjectDirectory "$LuaRocksDir" -MQRoot "${{ github.workspace }}" -Platform $Platform -Toolchain v143
                         # Write-Debug "Done Running vcpkg_mq"
                     } else {
                         # Write-Debug "No dependencies needed"
@@ -687,7 +758,7 @@ jobs:
     runs-on: [symbol, self-hosted, Windows, X64]
     steps:
       - name: Download Symbols Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: symbols-${{ inputs.client_target }}
           path: ${{ github.workspace }}

@@ -33,8 +33,7 @@
 
 #include <filesystem>
 
-namespace mq {
-namespace imgui {
+namespace mq::imgui {
 
 //============================================================================
 
@@ -473,7 +472,109 @@ void EndColumnHeadersSync(ColumnHeader* headers, int count)
 	ImGui::EndChild();
 }
 
-}} // namespace mq::imgui
+//============================================================================
+
+void AddImageNineSlice(ImDrawList* draw_list, ImTextureRef tex_ref, const NineSliceImageParams& params,
+	const ImVec2& p_min, const ImVec2& p_max, ImU32 col)
+{
+	if ((col & IM_COL32_A_MASK) == 0)
+		return;
+
+	const float W = p_max.x - p_min.x;
+	const float H = p_max.y - p_min.y;
+	const float uvW = params.uv_max.x - params.uv_min.x;
+	const float uvH = params.uv_max.y - params.uv_min.y;
+	if (W <= 0.0f || H <= 0.0f || uvW <= 0.0f || uvH <= 0.0f)
+		return;
+
+	float ml = params.p_margins.x;
+	float mt = params.p_margins.y;
+	float mr = params.p_margins.z;
+	float mb = params.p_margins.w;
+
+	// Screen: clamp pixel margins against W/H
+	if (ml + mr > W)
+	{
+		float s = W / (ml + mr);
+		ml *= s;
+		mr *= s;
+	}
+	if (mt + mb > H)
+	{
+		float s = H / (mt + mb);
+		mt *= s;
+		mb *= s;
+	}
+
+	const float cw[3] = { ml, W - ml - mr, mr };
+	const float ch[3] = { mt, H - mt - mb, mb };
+	const float px[4] = { p_min.x, p_min.x + ml, p_max.x - mr, p_max.x };
+	const float py[4] = { p_min.y, p_min.y + mt, p_max.y - mb, p_max.y };
+
+	float umr = params.uv_margins.z;
+	float uml = params.uv_margins.x;
+	float umt = params.uv_margins.y;
+	float umb = params.uv_margins.w;
+	if (uml + umr > uvW)
+	{
+		float s = uvW / (uml + umr);
+		uml *= s;
+		umr *= s;
+	}
+	if (umt + umb > uvH)
+	{
+		float s = uvH / (umt + umb);
+		umt *= s;
+		umb *= s;
+	}
+
+	const float uvx[4] = { params.uv_min.x, params.uv_min.x + uml, params.uv_max.x - umr, params.uv_max.x };
+	const float uvy[4] = { params.uv_min.y, params.uv_min.y + umt, params.uv_max.y - umb, params.uv_max.y };
+
+	for (int row = 0; row < 3; ++row)
+	{
+		if (ch[row] < 0.001f)
+			continue;
+
+		for (int c = 0; c < 3; ++c)
+		{
+			if (cw[c] < 0.001f)
+				continue;
+
+			draw_list->AddImage(tex_ref,
+				ImVec2(px[c], py[row]),
+				ImVec2(px[c + 1], py[row + 1]),
+				ImVec2(uvx[c], uvy[row]),
+				ImVec2(uvx[c + 1], uvy[row + 1]),
+				col);
+		}
+	}
+}
+
+void ImageNineSlice(ImTextureRef tex_ref, const NineSliceImageParams& image_params,
+	const ImVec2& image_size, ImU32 tint_col)
+{
+	using namespace ImGui;
+
+	ImGuiContext& g = *GetCurrentContext();
+	ImGuiWindow* window = GetCurrentWindow();
+	if (window->SkipItems)
+		return;
+
+	const ImVec2 padding(g.Style.ImageBorderSize, g.Style.ImageBorderSize);
+	const ImRect bb(window->DC.CursorPos, window->DC.CursorPos + image_size + padding * 2.0f);
+	ItemSize(bb);
+	if (!ItemAdd(bb, 0))
+		return;
+
+	// Render
+	if (g.Style.ImageBorderSize > 0.0f)
+		window->DrawList->AddRect(bb.Min, bb.Max, GetColorU32(ImGuiCol_Border), 0.0f, ImDrawFlags_None, g.Style.ImageBorderSize);
+
+	AddImageNineSlice(window->DrawList, tex_ref, image_params, bb.Min + padding, bb.Max - padding, tint_col);
+}
+
+} // namespace mq::imgui
 
 
 void ImGuiLogDebug(const char* fmt, ...)
