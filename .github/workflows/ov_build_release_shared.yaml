@@ -65,7 +65,7 @@ jobs:
       - name: Get extra plugins from docs site
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/redbot/docs/master/main/plugin-quick-list.md" -OutFile "plugin-quick-list.md"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/redbot/docs/readguides/main/plugin-quick-list.md" -OutFile "plugin-quick-list.md"
 
       - name: Checkout plugins that work on all clients
         shell: pwsh
@@ -148,7 +148,7 @@ jobs:
       - name: Get SLN file from docs site
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/redbot/docs/master/uploads/MacroQuestCustom.sln" -OutFile "src/MacroQuestCustom.sln"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/redbot/docs/readguides/uploads/MacroQuestCustom.sln" -OutFile "src/MacroQuestCustom.sln"
 
       - name: Create crashpad.h
         shell: pwsh
