@@ -1,15 +1,11 @@
 # Open Vanilla
 
-Open Vanilla is a compilation of multi-boxing software for EverQuest, nearly all based on [MacroQuest](https://github.com/macroquest/macroquest) with plugins and effort from the [RedGuides community](https://www.redguides.com).
-
-[![Emu RoF2 Build](https://github.com/macroquest/macroquest/actions/workflows/ci_emu_rof2.yaml/badge.svg)](https://github.com/macroquest/macroquest/actions/workflows/ci_emu_rof2.yaml)
+Open Vanilla is a compilation of multi-boxing software for EverQuest, nearly all based on [MacroQuest](https://github.com/macroquest/macroquest) with plugins and effort from the [RedGuides community](https://www.redguides.com). 
 
 ### Not a gnome? ⚙️
 The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com/community/resources/redguides-launcher.1255/) is available for contributors and subscribers. If you're here to tinker, read on!
 
 ## How To Build
-
-Building Open Vanilla is the same as MacroQuest, the only difference is that you'll be using `src/OpenVanilla.sln` rather than `src/MacroQuest.sln`
 
 ### Prererequisites
 
@@ -52,7 +48,7 @@ At this point, the source should be ready to compile. Proceed to building.
 
 ### Build Steps
 
-1. Open the `src\OpenVanilla.sln` file.
+1. Open the `src\MacroQuest.sln` file.
 1. Select the `Release` and `(x64)` configuration from the drop-down menu near the top of the window.
 1. Since the project moved to 64-bit, ensure all project configurations are set to `(x64)` in the **Solution Macroquest** Property Pages.  From the Visual Studio main menu, select **Build** then **Configuration Manager** then ensure the Platform column for each project is set to `(x64)`.
 1. Select `Build -> Build Solution` from the menu.
