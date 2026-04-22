@@ -1,0 +1,54 @@
+# Merges macroquest/macroquest tag rel-emu-rof2 into redguides/openvanilla master,
+# then kicks off the eqlib sync workflow on redguides/eqlib.
+# Using a persistent clone so git's rerere accumulates between runs.
+name: OV Sync upstream (MacroQuest rel-emu-rof2)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'redguides/openvanilla'
+    runs-on: [fast, self-hosted, Windows, X64]
+    env:
+      REPO_DIR: C:\actions-runner\repos\openvanilla
+      RG_SYNC_PAT: ${{ secrets.RG_SYNC_PAT }}
+    steps:
+      - name: Merge macroquest tag rel-emu-rof2
+        shell: pwsh
+        env:
+          UPSTREAM_TAG: rel-emu-rof2
+        run: |
+          $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
+
+          if (-not (Test-Path $env:REPO_DIR)) {
+            git clone $auth $env:REPO_DIR
+            if ($LASTEXITCODE -ne 0) { throw "Initial clone failed." }
+          }
+          Set-Location $env:REPO_DIR
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git merge --abort 2>$null
+          git reset --hard HEAD
+          git clean -ffdx
+          git checkout master
+          git pull origin master
+
+          git remote add upstream https://github.com/macroquest/macroquest.git 2>$null
+          git fetch upstream --tags --force
+          git merge $env:UPSTREAM_TAG --no-edit
+          if ($LASTEXITCODE -ne 0) { throw "Merge tag $env:UPSTREAM_TAG failed. Resolve in $env:REPO_DIR." }
+          git push $auth master
+          if ($LASTEXITCODE -ne 0) { throw "Push master failed." }
+
+      - name: Trigger eqlib sync
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RG_SYNC_PAT }}
+        run: gh api repos/redguides/eqlib/dispatches -f event_type=sync-upstream
