@@ -32,6 +32,7 @@ env:
       "beta-emu-tob":  5,
       "emu-tob":       6
     }')[inputs.client_target] }}
+  gh_release_flag: ${{ contains(fromJSON('["live","test","emu-rof2"]'), inputs.client_target) && '--latest' || '--prerelease' }}
 
 jobs:
   build:
@@ -325,7 +326,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" $(if ($${{ inputs.client_target == 'emu-rof2' }}) {"--latest"} else {"--prerelease"}) build/bin/MacroQuest.zip
+          gh release create ${{ github.ref_name }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" ${{ env.gh_release_flag }} build/bin/MacroQuest.zip
 
       - name: Send Discord Notice
         if: false # disabled while iterating on the workflow
