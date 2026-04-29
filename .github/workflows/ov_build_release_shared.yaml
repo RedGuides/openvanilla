@@ -158,7 +158,7 @@ jobs:
         run: |
           $headers = @{ Authorization = "token $env:VV_SYNC_PAT"; 'User-Agent' = 'openvanilla-ci' }
           Invoke-WebRequest -Headers $headers -Uri 'https://raw.githubusercontent.com/redguides/veryvanilla/main/plugin-slow-list.md' -OutFile 'plugin-slow-list.md'
-          Invoke-WebRequest -Headers $headers -Uri 'https://raw.githubusercontent.com/redguides/veryvanilla/main/VVPlugins.sln' -OutFile 'src/VVPlugins.sln'
+          Invoke-WebRequest -Headers $headers -Uri 'https://raw.githubusercontent.com/redguides/veryvanilla/main/VVCustom.sln' -OutFile 'src/VVCustom.sln'
 
       - name: "[VV-Plugins] Checkout VeryVanilla plugins (All)"
         if: env.vv_enabled == 'true'
@@ -283,7 +283,7 @@ jobs:
       - name: "[Build] Restore VeryVanilla NuGet packages"
         if: env.vv_enabled == 'true'
         run: |
-          nuget restore src/VVPlugins.sln
+          nuget restore src/VVCustom.sln
 
       - name: "[Build] Check vcpkg Installation"
         id: check_vcpkg
@@ -331,7 +331,7 @@ jobs:
 
       - name: "[Build] Build VeryVanilla ${{ env.platform }} Release for ${{ inputs.client_target }}"
         if: env.vv_enabled == 'true'
-        run: msbuild src/VVPlugins.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64
+        run: msbuild src/VVCustom.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64
 
       - name: "[Symbols] Update Symbol Server"
         shell: pwsh
