@@ -42,7 +42,7 @@ env:
       "emu-rof2": "2296"
     }')[inputs.client_target] }}
   # Bundled in VeryVanilla.zip but symbols go to SPECIAL_SYM_PATH.
-  vv_bundled_restricted: '["MQ2GroundSpawns","MQ2CWTNBuffs","CWTNCommons"]'
+  vv_bundled_restricted: '["MQ2GroundSpawns","MQ2CWTNBuffs","CWTNCommons", "MQ2BuffMe"]'
   # Standalone plugins
   vv_standalone_map: >-
     {
@@ -210,7 +210,7 @@ jobs:
       - name: "[Plugins] Validate Plugin Projects"
         shell: pwsh
         run: |
-          $result = & "${{ github.workspace }}/tools/build_scripts/Validate_Plugin_Projects.ps1" -PluginsDirectory "${{ github.workspace }}/plugins" -Whitelist @("MQ2Nav")
+          $result = & "${{ github.workspace }}/tools/build_scripts/Validate_Plugin_Projects.ps1" -PluginsDirectory "${{ github.workspace }}/plugins" -Whitelist @("MQ2Nav", "CWTN")
           $exitCode = $LASTEXITCODE
           $discordMessage = ($result -join "`n")
           if ($discordMessage.Length -gt 4000) {
