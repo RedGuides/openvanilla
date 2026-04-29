@@ -553,6 +553,7 @@ jobs:
         shell: pwsh
         env:
           REDGUIDES_API_KEY: ${{ secrets.RG_API_KEY }}
+          REDGUIDES_USER_ID: ${{ secrets.RG_USER_ID }}
         run: |
           $version = $env:MQVERSION_INFO
           $releaseNotes = "${{ github.workspace }}/build/ReleaseNotes.md"
