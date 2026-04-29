@@ -33,42 +33,77 @@ env:
       "emu-tob":       6
     }')[inputs.client_target] }}
   gh_release_flag: ${{ contains(fromJSON('["live","test","emu-rof2"]'), inputs.client_target) && '--latest' || '--prerelease' }}
+  # VeryVanilla publishes the following versions:
+  vv_enabled: ${{ contains(fromJSON('["live","test","emu-rof2"]'), inputs.client_target) }}
+  vv_resource_id: >-
+    ${{ fromJSON('{
+      "live":     "1623",
+      "test":     "1742",
+      "emu-rof2": "2296"
+    }')[inputs.client_target] }}
+  # Bundled in VeryVanilla.zip but symbols go to SPECIAL_SYM_PATH.
+  vv_bundled_restricted: '["MQ2GroundSpawns","MQ2CWTNBuffs","CWTNCommons"]'
+  # Standalone plugins
+  vv_standalone_map: >-
+    {
+      "MQ2Bst":       "1499",
+      "MQ2Eskay":     "1153",
+      "MQ2Monk":      "1287",
+      "MQ2Rogue":     "1084",
+      "MQ2War":       "1254",
+      "MQ2Berzerker": "1018",
+      "MQ2Cleric":    "1498",
+      "MQ2Shaman":    "1724",
+      "MQ2Enchanter": "1612",
+      "MQ2Grind":     "1967",
+      "MQ2Mage":      "2134",
+      "MQ2Paladin":   "2586",
+      "MQ2Necro":     "2585",
+      "MQ2Druid":     "2587",
+      "MQ2Wizard":    "2932",
+      "MQ2Ranger":    "2909",
+      "MQ2Bard":      "3162"
+    }
 
 jobs:
   build:
     if: github.repository == 'redguides/openvanilla'
     runs-on: [fast, self-hosted, Windows, X64]
+    env:
+      GIT_CONFIG_COUNT: ${{ contains(fromJSON('["live","test","emu-rof2"]'), inputs.client_target) && '1' || '0' }}
+      GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.VV_SYNC_PAT }}@github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: https://github.com/
     steps:
-      - name: Validate version revision
+      - name: "[Setup] Validate version revision"
         if: env.version_rev == ''
         run: |
           echo "::error:: Target '${{ inputs.client_target }}' has no version_rev defined. Update the version revision map in the env block."
           exit 1
 
-      - name: Install and cache PowerShell modules
+      - name: "[Setup] Install and cache PowerShell modules"
         uses: potatoqualitee/psmodulecache@v6.2.1
         with:
           modules-to-cache: powershell-yaml
 
-      - name: Checkout code
+      - name: "[Source] Checkout code"
         uses: actions/checkout@v6
 
-      - name: Reset eqlib
+      - name: "[Source] Reset eqlib"
         run: git -C src/eqlib reset --hard
         continue-on-error: true
 
-      - name: Sync submodule URLs
+      - name: "[Source] Sync submodule URLs"
         run: git submodule sync --recursive
 
-      - name: Update builtin submodules
+      - name: "[Source] Update builtin submodules"
         run: git submodule update --init --recursive --depth=1
 
-      - name: Get extra plugins from docs site
+      - name: "[Plugins] Get extra plugins from docs site"
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/redbot/docs/readguides/main/plugin-quick-list.md" -OutFile "plugin-quick-list.md"
 
-      - name: Checkout plugins that work on all clients
+      - name: "[Plugins] Checkout plugins that work on all clients"
         shell: pwsh
         run: |
           $start = Select-String -Path plugin-quick-list.md -Pattern "^# All" -CaseSensitive
@@ -81,7 +116,7 @@ jobs:
             }
           }
 
-      - name: Checkout plugins that work on Live/Test clients
+      - name: "[Plugins] Checkout plugins that work on Live/Test clients"
         #if: ${{ inputs.client_target == 'live' || inputs.client_target == 'test' }}
         shell: pwsh
         run: |
@@ -95,7 +130,7 @@ jobs:
             }
           }
 
-      - name: Checkout plugins that work on RoF2 clients
+      - name: "[Plugins] Checkout plugins that work on RoF2 clients"
         shell: pwsh
         run: |
           $start = Select-String -Path plugin-quick-list.md -Pattern "^# RoF2 only" -CaseSensitive
@@ -108,19 +143,71 @@ jobs:
             }
           }
 
-      - name: Checkout beta branch for plugins
+      - name: "[Plugins] Checkout beta branch for plugins"
         if: contains(inputs.client_target, 'beta')
         shell: pwsh
         run: |
           Get-ChildItem plugins -Directory | ForEach-Object { Write-Host "Checking for beta branch in $($_.Name)"; git -C "$($_.FullName)" checkout beta 2>$null }
           exit 0
 
-      - name: Update Plugin Submodules
+      - name: "[VV-Plugins] Fetch VeryVanilla manifest and solution"
+        if: env.vv_enabled == 'true'
+        shell: pwsh
+        env:
+          VV_SYNC_PAT: ${{ secrets.VV_SYNC_PAT }}
+        run: |
+          $headers = @{ Authorization = "token $env:VV_SYNC_PAT"; 'User-Agent' = 'openvanilla-ci' }
+          Invoke-WebRequest -Headers $headers -Uri 'https://raw.githubusercontent.com/redguides/veryvanilla/main/plugin-slow-list.md' -OutFile 'plugin-slow-list.md'
+          Invoke-WebRequest -Headers $headers -Uri 'https://raw.githubusercontent.com/redguides/veryvanilla/main/VVPlugins.sln' -OutFile 'src/VVPlugins.sln'
+
+      - name: "[VV-Plugins] Checkout VeryVanilla plugins (All)"
+        if: env.vv_enabled == 'true'
+        shell: pwsh
+        run: |
+          $start = Select-String -Path plugin-slow-list.md -Pattern "^# All" -CaseSensitive
+          $end = Select-String -Path plugin-slow-list.md -Pattern "^(#|``)" -CaseSensitive | Where-Object { $_.LineNumber -gt $start.LineNumber } | Select-Object -First 1
+          $content = Get-Content plugin-slow-list.md | Select-Object -Index ($start.LineNumber..($end.LineNumber - 2))
+          $content | ForEach-Object {
+            $cmd = $_.Trim()
+            if ($cmd.StartsWith("git clone")) {
+              Invoke-Expression $cmd
+            }
+          }
+
+      - name: "[VV-Plugins] Checkout VeryVanilla plugins (Live/Test only)"
+        if: env.vv_enabled == 'true' && (inputs.client_target == 'live' || inputs.client_target == 'test')
+        shell: pwsh
+        run: |
+          $start = Select-String -Path plugin-slow-list.md -Pattern "^# Live/Test only" -CaseSensitive
+          $end = Select-String -Path plugin-slow-list.md -Pattern "^(#|``)" | Where-Object { $_.LineNumber -gt $start.LineNumber } | Select-Object -First 1
+          $content = Get-Content plugin-slow-list.md | Select-Object -Index ($start.LineNumber..($end.LineNumber - 2))
+          $content | ForEach-Object {
+            $cmd = $_.Trim()
+            if ($cmd.StartsWith("git clone")) {
+              Invoke-Expression $cmd
+            }
+          }
+
+      - name: "[VV-Plugins] Checkout VeryVanilla plugins (RoF2 only)"
+        if: env.vv_enabled == 'true' && inputs.client_target == 'emu-rof2'
+        shell: pwsh
+        run: |
+          $start = Select-String -Path plugin-slow-list.md -Pattern "^# RoF2 only" -CaseSensitive
+          $end = Select-String -Path plugin-slow-list.md -Pattern "^(#|``)" | Where-Object { $_.LineNumber -gt $start.LineNumber } | Select-Object -First 1
+          $content = Get-Content plugin-slow-list.md | Select-Object -Index ($start.LineNumber..($end.LineNumber - 2))
+          $content | ForEach-Object {
+            $cmd = $_.Trim()
+            if ($cmd.StartsWith("git clone")) {
+              Invoke-Expression $cmd
+            }
+          }
+
+      - name: "[Plugins] Update Plugin Submodules"
         shell: pwsh
         run: |
           Get-ChildItem plugins -Directory | ForEach-Object { Write-Host "$($_.Name)"; git -C "$($_.FullName)" submodule update --init --recursive --depth=1 }
 
-      - name: Validate Plugin Projects
+      - name: "[Plugins] Validate Plugin Projects"
         shell: pwsh
         run: |
           $result = & "${{ github.workspace }}/tools/build_scripts/Validate_Plugin_Projects.ps1" -PluginsDirectory "${{ github.workspace }}/plugins" -Whitelist @("MQ2Nav")
@@ -145,12 +232,12 @@ jobs:
             exit 1
           }
 
-      - name: Get SLN file from docs site
+      - name: "[Source] Get SLN file from docs site"
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://raw.githubusercontent.com/redbot/docs/readguides/uploads/MacroQuestCustom.sln" -OutFile "src/MacroQuestCustom.sln"
 
-      - name: Create crashpad.h
+      - name: "[Configure] Create crashpad.h"
         shell: pwsh
         env:
           CRASHPAD_URL: ${{ secrets.CRASHPAD_URL }}
@@ -163,7 +250,7 @@ jobs:
           $content = $content -replace '^\s*#define\s+CRASHPAD_SUBMISSIONS_URL\s+".*"$', "#define CRASHPAD_SUBMISSIONS_URL `"$env:CRASHPAD_URL`""
           Set-Content -Path $crashpadConfig -Value $content
 
-      - name: Set Versioning for MQMain
+      - name: "[Configure] Set Versioning for MQMain"
         shell: pwsh
         run: |
           $versionFile = "src/main/MQVersionInfo.h"
@@ -173,7 +260,7 @@ jobs:
           $versionInfo = $versionInfo -replace '#define MQMAIN_GIT_HASH "(.*)"', "#define MQMAIN_GIT_HASH `"$(git rev-parse --short HEAD)`""
           $versionInfo | Set-Content $versionFile
 
-      - name: Set Versioning for eqlib
+      - name: "[Configure] Set Versioning for eqlib"
         shell: pwsh
         run: |
           $versionFile = "src/eqlib/src/eqlibVersionInfo.h"
@@ -181,19 +268,24 @@ jobs:
           $versionInfo = $versionInfo -replace '#define EQLIB_GIT_HASH "(.*)"', "#define EQLIB_GIT_HASH `"$eqlibCommitHash`""
           $versionInfo | Set-Content $versionFile
 
-      - name: Setup MSBuild
+      - name: "[Build] Setup MSBuild"
         uses: microsoft/setup-msbuild@v3
         with:
           msbuild-architecture: x64
 
-      - name: Setup NuGet
+      - name: "[Build] Setup NuGet"
         uses: nuget/setup-nuget@v3
 
-      - name: Restore NuGet packages
+      - name: "[Build] Restore NuGet packages"
         run: |
           nuget restore src/MacroQuestCustom.sln
 
-      - name: Check vcpkg Installation
+      - name: "[Build] Restore VeryVanilla NuGet packages"
+        if: env.vv_enabled == 'true'
+        run: |
+          nuget restore src/VVPlugins.sln
+
+      - name: "[Build] Check vcpkg Installation"
         id: check_vcpkg
         shell: pwsh
         run: |
@@ -204,7 +296,7 @@ jobs:
             echo "vcpkg_installed=false" >> $env:GITHUB_OUTPUT
           }
 
-      - name: Restore vcpkg Cache
+      - name: "[Build] Restore vcpkg Cache"
         if: steps.check_vcpkg.outputs.vcpkg_installed != 'true'
         uses: actions/cache@v5
         with:
@@ -220,23 +312,51 @@ jobs:
             ${{ runner.os }}-vcpkg-${{ env.platform }}-
             ${{ runner.os }}-vcpkg-
 
-      - name: Build MQ2Main:${{ env.platform }} Release for ${{ inputs.client_target }}
+      - name: "[Build] Build MQ2Main:${{ env.platform }} Release for ${{ inputs.client_target }}"
         run: msbuild src/MacroQuestCustom.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /t:core\MQ2Main /p:PreferredToolArchitecture=x64
 
-      - name: Build ${{ env.platform }} Release for ${{ inputs.client_target }}
+      - name: "[Build] Build ${{ env.platform }} Release for ${{ inputs.client_target }}"
         run: msbuild src/MacroQuestCustom.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64
 
-      - name: Update Symbol Server
+      - name: "[Build] Snapshot MacroQuest release tree"
+        if: env.vv_enabled == 'true'
+        shell: pwsh
+        run: |
+          $ReleasePath = "${{ github.workspace }}\build\bin\Release"
+          New-Item -Path "${{ github.workspace }}\build\manifests" -ItemType Directory -Force | Out-Null
+          $rel = Get-ChildItem -LiteralPath $ReleasePath -Recurse -File | ForEach-Object {
+            $_.FullName.Substring($ReleasePath.Length).TrimStart('\')
+          }
+          $rel | Sort-Object | Out-File -Encoding ascii "${{ github.workspace }}\build\manifests\mq_baseline.txt"
+
+      - name: "[Build] Build VeryVanilla ${{ env.platform }} Release for ${{ inputs.client_target }}"
+        if: env.vv_enabled == 'true'
+        run: msbuild src/VVPlugins.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64
+
+      - name: "[Symbols] Update Symbol Server"
         shell: pwsh
         run: |
           $ProjectTitle = $($env:GITHUB_REPOSITORY).Split("/")[1]
           $SymbolDir = "${{ secrets.SYMBOL_SRV_PATH }}"
           $ReleasePath = "${{ github.workspace }}\build\bin\Release"
           $symstore = (Get-ChildItem -Recurse "${ENV:ProgramFiles(x86)}\Windows Kits" -Filter symstore.exe | Where-Object { $_.FullName -notmatch 'arm' } | Sort-Object LastWriteTime | Select-Object -last 1).FullName
+
+          # Plugins outside of normal symstore.
+          $excludeNames = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+          if ('${{ env.vv_enabled }}' -eq 'true') {
+            (ConvertFrom-Json '${{ env.vv_bundled_restricted }}') | ForEach-Object { [void]$excludeNames.Add($_) }
+            (ConvertFrom-Json '${{ env.vv_standalone_map }}').PSObject.Properties.Name | ForEach-Object { [void]$excludeNames.Add($_) }
+          }
+
+          $files = Get-ChildItem -LiteralPath $ReleasePath -Recurse -File -Include *.dll, *.exe, *.pdb |
+            Where-Object { -not $excludeNames.Contains($_.BaseName) }
+
+          $listFile = "${{ github.workspace }}\build\manifests\public_symbols.txt"
+          New-Item -Path (Split-Path $listFile) -ItemType Directory -Force | Out-Null
+          $files | ForEach-Object { $_.FullName } | Out-File -Encoding ascii $listFile
+
           $LASTEXITCODE = 0
-          & $symstore add /r /f "$ReleasePath\*.dll" /s $SymbolDir /t "$ProjectTitle" /compress | Out-Null
-          & $symstore add /r /f "$ReleasePath\*.exe" /s $SymbolDir /t "$ProjectTitle" /compress | Out-Null
-          & $symstore add /r /f "$ReleasePath\*.pdb" /s $SymbolDir /t "$ProjectTitle" /compress | Out-Null
+          & $symstore add /f "@$listFile" /s $SymbolDir /t "$ProjectTitle" /compress | Out-Null
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to update symbol server"
           }
@@ -246,14 +366,50 @@ jobs:
             throw "Failed to age symbol server"
           }
 
-      - name: Remove Build Artifacts
+      - name: "[Symbols] Update Special Symbol Server"
+        if: env.vv_enabled == 'true'
+        shell: pwsh
+        run: |
+          $ProjectTitle = $($env:GITHUB_REPOSITORY).Split("/")[1]
+          $SymbolDir = "${{ secrets.SPECIAL_SYM_PATH }}"
+          $ReleasePath = "${{ github.workspace }}\build\bin\Release"
+          $symstore = (Get-ChildItem -Recurse "${ENV:ProgramFiles(x86)}\Windows Kits" -Filter symstore.exe | Where-Object { $_.FullName -notmatch 'arm' } | Sort-Object LastWriteTime | Select-Object -last 1).FullName
+
+          $includeNames = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+          (ConvertFrom-Json '${{ env.vv_bundled_restricted }}') | ForEach-Object { [void]$includeNames.Add($_) }
+          (ConvertFrom-Json '${{ env.vv_standalone_map }}').PSObject.Properties.Name | ForEach-Object { [void]$includeNames.Add($_) }
+
+          $files = Get-ChildItem -LiteralPath $ReleasePath -Recurse -File -Include *.dll, *.pdb |
+            Where-Object { $includeNames.Contains($_.BaseName) }
+
+          if ($files.Count -eq 0) {
+            Write-Host "No restricted files present; nothing to add to the special symbol server."
+            exit 0
+          }
+
+          $listFile = "${{ github.workspace }}\build\manifests\special_symbols.txt"
+          New-Item -Path (Split-Path $listFile) -ItemType Directory -Force | Out-Null
+          $files | ForEach-Object { $_.FullName } | Out-File -Encoding ascii $listFile
+
+          $LASTEXITCODE = 0
+          & $symstore add /f "@$listFile" /s $SymbolDir /t "$ProjectTitle" /compress | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to update special symbol server"
+          }
+          $agestore = (Get-ChildItem -Recurse "${ENV:ProgramFiles(x86)}\Windows Kits" -Filter agestore.exe | Where-Object { $_.FullName -notmatch 'arm' } | Sort-Object LastWriteTime | Select-Object -last 1).FullName
+          & $agestore $SymbolDir /days=60 /s /y | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to age special symbol server"
+          }
+
+      - name: "[Package] Remove Build Artifacts"
         shell: pwsh
         run: |
           Get-ChildItem build/bin/Release -Include *.pdb -Recurse | Remove-Item -Force
           Get-ChildItem build/bin/Release -Include *.lib -Recurse | Remove-Item -Force
           Get-ChildItem build/bin/Release -Include *.exp -Recurse | Remove-Item -Force
 
-      - name: Sign Code
+      - name: "[Package] Sign Code"
         shell: pwsh
         run: |
           $SignCert = "build/bin/signcert.pfx"
@@ -265,18 +421,66 @@ jobs:
           }
           Remove-Item -Force build/bin/signcert.pfx
 
-      - name: Create MacroQuest Archive
+      - name: "[Package] Create MacroQuest Archive"
         shell: pwsh
         run: |
           Push-Location build/bin/Release
-          7z a -tzip -r ../MacroQuest.zip *
+          if ('${{ env.vv_enabled }}' -eq 'true') {
+            # Only include files that existed before the VeryVanilla build.
+            $baseline = "${{ github.workspace }}\build\manifests\mq_baseline.txt"
+            $existing = Get-ChildItem -Recurse -File | ForEach-Object {
+              $_.FullName.Substring((Get-Location).Path.Length).TrimStart('\')
+            } | Sort-Object -Unique
+            $baselineSet = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+            Get-Content $baseline | ForEach-Object { [void]$baselineSet.Add($_) }
+            $include = $existing | Where-Object { $baselineSet.Contains($_) }
+            $listFile = "${{ github.workspace }}\build\manifests\macroquest_zip.txt"
+            $include | Out-File -Encoding ascii $listFile
+            7z a -tzip ../MacroQuest.zip "@$listFile"
+          } else {
+            7z a -tzip -r ../MacroQuest.zip *
+          }
           Pop-Location
 
-      - name: Get Version Information
+      - name: "[Package] Create VeryVanilla Archive"
+        if: env.vv_enabled == 'true'
+        shell: pwsh
+        run: |
+          Push-Location build/bin/Release
+          $standaloneNames = (ConvertFrom-Json '${{ env.vv_standalone_map }}').PSObject.Properties.Name
+          $excludeArgs = @()
+          if ('${{ inputs.client_target }}' -ne 'test') {
+            # Standalone plugins ship as their own resources on live/emu-rof2.
+            foreach ($name in $standaloneNames) {
+              $excludeArgs += "-xr!$name.dll"
+            }
+          }
+          7z a -tzip -r ../VeryVanilla.zip * @excludeArgs
+          Pop-Location
+
+      - name: "[Package] Create Standalone Plugin Archives"
+        if: env.vv_enabled == 'true' && inputs.client_target != 'test'
+        shell: pwsh
+        run: |
+          $stagingDir = "${{ github.workspace }}\build\bin\standalone"
+          New-Item -Path $stagingDir -ItemType Directory -Force | Out-Null
+          $standaloneNames = (ConvertFrom-Json '${{ env.vv_standalone_map }}').PSObject.Properties.Name
+          foreach ($name in $standaloneNames) {
+            $dll = "${{ github.workspace }}\build\bin\Release\$name.dll"
+            if (Test-Path $dll) {
+              $zip = Join-Path $stagingDir "$name.zip"
+              if (Test-Path $zip) { Remove-Item $zip -Force }
+              7z a -tzip $zip $dll | Out-Null
+            } else {
+              Write-Host "Skipping $name (not built for ${{ inputs.client_target }})"
+            }
+          }
+
+      - name: "[Release] Get Version Information"
         shell: pwsh
         run: echo "MQVERSION_INFO=$((Get-Item build/bin/release/MQ2Main.dll).VersionInfo.FileVersion)" >> $env:GITHUB_ENV
 
-      - name: Restore Last Changelog
+      - name: "[Release] Restore Last Changelog"
         uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/build/changelog/CHANGELOG.md
@@ -284,7 +488,7 @@ jobs:
           restore-keys: |
             changelog-${{ env.platform }}-${{ inputs.client_target }}
 
-      - name: Diff Changelog
+      - name: "[Release] Diff Changelog"
         id: diff_changelog
         shell: pwsh
         run: |
@@ -309,7 +513,7 @@ jobs:
           Remove-Item -Force "${{ github.workspace }}/build/ReleaseNotes.md" -ErrorAction SilentlyContinue
           $ReleaseDescription | Out-File "${{ github.workspace }}/build/ReleaseNotes.md"
 
-      - name: Remove Release '${{ github.ref_name }}'
+      - name: "[Release] Remove Release '${{ github.ref_name }}'"
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -320,14 +524,14 @@ jobs:
           }
           exit 0
 
-      - name: Create Release for ${{ inputs.client_target }}
+      - name: "[Release] Create Release for ${{ inputs.client_target }}"
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create ${{ github.ref_name }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" ${{ env.gh_release_flag }} build/bin/MacroQuest.zip
 
-      - name: Send Discord Notice
+      - name: "[Release] Send Discord Notice"
         if: false # disabled while iterating on the workflow
         shell: pwsh
         run: |
@@ -343,3 +547,43 @@ jobs:
           } | ConvertTo-Json
           Invoke-RestMethod -Uri '${{ secrets.MQDISCORD_WEBHOOK }}' -Method Post -Body $discordPayload -ContentType 'application/json'
         continue-on-error: true
+
+      - name: "[Release] Publish to RedGuides"
+        if: env.vv_enabled == 'true'
+        shell: pwsh
+        env:
+          REDGUIDES_API_KEY: ${{ secrets.RG_API_KEY }}
+        run: |
+          $version = $env:MQVERSION_INFO
+          $releaseNotes = "${{ github.workspace }}/build/ReleaseNotes.md"
+          $failed = @()
+
+          function Publish-Resource([string]$resourceId, [string]$file, [string]$label, [string]$message) {
+            if (-not (Test-Path $file)) {
+              Write-Host "Skipping $label (file not present: $file)"
+              return
+            }
+            $args = @('publish', $resourceId, '--version', $version, '--file', $file)
+            if ($message -and (Test-Path $message)) {
+              $args += @('--message', $message)
+            }
+            Write-Host "Publishing $label (resource $resourceId) -> $file"
+            & redfetch @args
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Publish failed for $label (exit $LASTEXITCODE)"
+              $script:failed += $label
+            }
+          }
+
+          Publish-Resource '${{ env.vv_resource_id }}' 'build/bin/VeryVanilla.zip' 'VeryVanilla' $releaseNotes
+
+          if ('${{ inputs.client_target }}' -ne 'test') {
+            $standaloneMap = ConvertFrom-Json '${{ env.vv_standalone_map }}'
+            foreach ($prop in $standaloneMap.PSObject.Properties) {
+              Publish-Resource $prop.Value "build/bin/standalone/$($prop.Name).zip" $prop.Name $null
+            }
+          }
+
+          if ($failed.Count -gt 0) {
+            throw "Publish failed for: $($failed -join ', ')"
+          }
