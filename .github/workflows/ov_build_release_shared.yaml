@@ -552,6 +552,7 @@ jobs:
         if: env.vv_enabled == 'true'
         shell: pwsh
         env:
+          REDFETCH_BASE_URL: ${{ secrets.REDFETCH_BASE_URL }}
           REDGUIDES_API_KEY: ${{ secrets.RG_API_KEY }}
           REDGUIDES_USER_ID: ${{ secrets.RG_USER_ID }}
         run: |
