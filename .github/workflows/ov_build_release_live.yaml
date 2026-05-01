@@ -2,6 +2,9 @@ name: OV Build MacroQuest Live Release
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - vv-live
 
 concurrency:
   group: ${{ github.workflow }}

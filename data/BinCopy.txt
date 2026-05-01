@@ -1,4 +1,7 @@
-config/MacroQuest_default.ini
-macros/*.mac
+config/*
+macros/*
 resources/*
+resources/Sounds/*
+resources/uifiles/*
+resources/uifiles/default/*
 MeshUpdater.exe
