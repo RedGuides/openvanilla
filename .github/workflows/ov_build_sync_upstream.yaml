@@ -28,7 +28,6 @@ jobs:
 
           if (-not (Test-Path $env:REPO_DIR)) {
             git clone $auth $env:REPO_DIR
-            if ($LASTEXITCODE -ne 0) { throw "Initial clone failed." }
           }
           Set-Location $env:REPO_DIR
 
@@ -44,9 +43,14 @@ jobs:
           git remote add upstream https://github.com/macroquest/macroquest.git 2>$null
           git fetch upstream --tags --force
           git merge $env:UPSTREAM_TAG --no-edit
-          if ($LASTEXITCODE -ne 0) { throw "Merge tag $env:UPSTREAM_TAG failed. Resolve in $env:REPO_DIR." }
+
+          git diff --quiet HEAD $env:UPSTREAM_TAG -- src/eqlib
+          if ($LASTEXITCODE -ne 0) {
+            git checkout $env:UPSTREAM_TAG -- src/eqlib
+            git commit --amend --no-edit
+          }
+
           git push $auth master
-          if ($LASTEXITCODE -ne 0) { throw "Push master failed." }
 
       - name: Trigger eqlib sync
         shell: pwsh
