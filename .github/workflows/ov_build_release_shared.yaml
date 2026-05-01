@@ -501,7 +501,7 @@ jobs:
           if ('${{ inputs.client_target }}' -ne 'test') {
             # Standalone plugins ship as their own resources on live/emu-rof2.
             foreach ($name in $standaloneNames) {
-              $excludeArgs += "-xr!$name.dll"
+              $excludeArgs += "-xr!plugins\$name.dll"
             }
           }
           7z a -tzip -r ../VeryVanilla.zip * @excludeArgs
@@ -513,15 +513,19 @@ jobs:
         run: |
           $stagingDir = "${{ github.workspace }}\build\bin\standalone"
           New-Item -Path $stagingDir -ItemType Directory -Force | Out-Null
+          $releaseRoot = "${{ github.workspace }}\build\bin\Release"
           $standaloneNames = (ConvertFrom-Json '${{ env.vv_standalone_map }}').PSObject.Properties.Name
           foreach ($name in $standaloneNames) {
-            $dll = "${{ github.workspace }}\build\bin\Release\$name.dll"
+            $dll = Join-Path $releaseRoot "plugins\$name.dll"
+            if (-not (Test-Path $dll)) {
+              $dll = Join-Path $releaseRoot "$name.dll"
+            }
             if (Test-Path $dll) {
               $zip = Join-Path $stagingDir "$name.zip"
               if (Test-Path $zip) { Remove-Item $zip -Force }
               7z a -tzip $zip $dll | Out-Null
             } else {
-              Write-Host "Skipping $name (not built for ${{ inputs.client_target }})"
+              Write-Host "Skipping $name (DLL not found under $releaseRoot\plugins or $releaseRoot)"
             }
           }
 
