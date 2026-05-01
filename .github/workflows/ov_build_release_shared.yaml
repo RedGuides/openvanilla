@@ -629,10 +629,6 @@ jobs:
           READY_UPDATE_ENDPOINT: ${{ secrets.READY_UPDATE_ENDPOINT }}
           READY_UPDATE_KEY: ${{ secrets.READY_UPDATE_KEY }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:READY_UPDATE_ENDPOINT) -or [string]::IsNullOrWhiteSpace($env:READY_UPDATE_KEY)) {
-            Write-Host 'Skipping ready manifest (endpoint or key not configured).'
-            exit 0
-          }
           $ct = '${{ inputs.client_target }}'
           $body = 'key=' + [uri]::EscapeDataString($env:READY_UPDATE_KEY) + '&' + $ct + '=yes'
           Invoke-WebRequest -Uri $env:READY_UPDATE_ENDPOINT -Method Post -Body $body -ContentType 'application/x-www-form-urlencoded' -TimeoutSec 60 -UseBasicParsing
