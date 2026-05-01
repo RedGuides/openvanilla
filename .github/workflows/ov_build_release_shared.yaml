@@ -32,6 +32,16 @@ env:
       "beta-emu-tob":  5,
       "emu-tob":       6
     }')[inputs.client_target] }}
+  # Default ini profile for the target client
+  mq_default_ini_profile: >-
+    ${{ fromJSON('{
+      "live":          "live",
+      "test":          "live",
+      "emu-rof2":      "emu-rof2",
+      "beta-emu-rof2": "emu-rof2",
+      "emu-tob":       "live",
+      "beta-emu-tob":  "live"
+    }')[inputs.client_target] }}
   gh_release_flag: ${{ contains(fromJSON('["live","test","emu-rof2"]'), inputs.client_target) && '--latest' || '--prerelease' }}
   # VeryVanilla publishes the following versions:
   vv_enabled: ${{ contains(fromJSON('["live","test","emu-rof2"]'), inputs.client_target) }}
@@ -42,7 +52,7 @@ env:
       "emu-rof2": "2296"
     }')[inputs.client_target] }}
   # Bundled in VeryVanilla.zip but symbols go to SPECIAL_SYM_PATH.
-  vv_bundled_restricted: '["MQ2GroundSpawns","MQ2CWTNBuffs","CWTNCommons", "MQ2BuffMe"]'
+  vv_bundled_restricted: '["MQ2GroundSpawns","MQ2CWTNBuffs","CWTNCommons", "MQ2BuffMe", "MQNearby"]'
   # Standalone plugins
   vv_standalone_map: >-
     {
@@ -97,6 +107,27 @@ jobs:
 
       - name: "[Source] Update builtin submodules"
         run: git submodule update --init --recursive --depth=1
+
+      - name: "[Source] Select MacroQuest_default.ini for release profile"
+        shell: pwsh
+        run: |
+          $src = "data/config/MacroQuest_default.${{ env.mq_default_ini_profile }}.ini"
+          $dest = "data/config/MacroQuest_default.ini"
+          Copy-Item -LiteralPath $src -Destination $dest -Force
+          $ct = "${{ inputs.client_target }}"
+          $suffix = ($ct -split '-' | Where-Object { $_ } | ForEach-Object {
+            $s = $_.ToLowerInvariant()
+            [char]::ToUpperInvariant($s[0]) + $s.Substring(1)
+          }) -join ''
+          $class = "__MacroQuestTray$suffix"
+          $name = "MacroQuest$suffix"
+          $lines = Get-Content -LiteralPath $dest
+          $lines = $lines | ForEach-Object {
+            if ($_ -match '^\s*MacroQuestWinClassName\s*=') { "MacroQuestWinClassName=$class" }
+            elseif ($_ -match '^\s*MacroQuestWinName\s*=') { "MacroQuestWinName=$name" }
+            else { $_ }
+          }
+          Set-Content -LiteralPath $dest -Value $lines -Encoding utf8NoBOM
 
       - name: "[Plugins] Get extra plugins from docs site"
         shell: pwsh

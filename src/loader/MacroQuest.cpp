@@ -44,6 +44,8 @@
 #include "wil/resource.h"
 
 #include <filesystem>
+#include <fstream>
+#include <future>
 #include <tuple>
 #include <shellapi.h>
 #include <fcntl.h>
@@ -1341,6 +1343,302 @@ void ShowAdvancedMenu()
 		RefreshInjections();
 }
 
+#pragma region RedGuides
+
+static std::string UnescapeJsonString(const std::string& raw)
+{
+	std::string result;
+	result.reserve(raw.size());
+	for (size_t i = 0; i < raw.size(); ++i)
+	{
+		if (raw[i] == '\\' && i + 1 < raw.size())
+			++i;
+		result += raw[i];
+	}
+	return result;
+}
+
+static std::string ReadBreadcrumbProgram()
+{
+	char localAppData[MAX_PATH] = { 0 };
+	if (FAILED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData)))
+		return {};
+
+	auto breadcrumbPath = fs::path(localAppData) / "RedGuides" / "redfetch" / "last_command.json";
+
+	std::error_code ec;
+	if (!fs::exists(breadcrumbPath, ec))
+		return {};
+
+	std::ifstream file(breadcrumbPath);
+	if (!file.is_open())
+		return {};
+
+	std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+	auto keyPos = content.find("\"program\"");
+	if (keyPos == std::string::npos)
+		return {};
+
+	auto colonPos = content.find(':', keyPos + 9);
+	if (colonPos == std::string::npos)
+		return {};
+
+	auto quoteStart = content.find('"', colonPos + 1);
+	if (quoteStart == std::string::npos)
+		return {};
+
+	size_t quoteEnd = quoteStart + 1;
+	while (quoteEnd < content.size())
+	{
+		if (content[quoteEnd] == '\\')
+		{
+			quoteEnd += 2;
+			continue;
+		}
+		if (content[quoteEnd] == '"')
+			break;
+		++quoteEnd;
+	}
+
+	if (quoteEnd >= content.size())
+		return {};
+
+	return UnescapeJsonString(content.substr(quoteStart + 1, quoteEnd - quoteStart - 1));
+}
+
+static std::string ResolveRedfetchCommand()
+{
+	std::error_code ec;
+
+	std::string iniOverride = mq::GetPrivateProfileString("MacroQuest", "RedfetchCommand", "", internal_paths::MQini);
+	if (!iniOverride.empty() && fs::exists(iniOverride, ec))
+		return iniOverride;
+
+	std::string breadcrumb = ReadBreadcrumbProgram();
+	if (!breadcrumb.empty() && fs::exists(breadcrumb, ec))
+		return breadcrumb;
+
+	char pathResult[MAX_PATH] = { 0 };
+	if (SearchPathA(nullptr, "redfetch.exe", nullptr, MAX_PATH, pathResult, nullptr) > 0
+		&& fs::exists(pathResult, ec))
+	{
+		return pathResult;
+	}
+
+	return {};
+}
+
+static void LaunchRedfetch(bool isUpdate = false)
+{
+	std::string redfetchPath = ResolveRedfetchCommand();
+	if (redfetchPath.empty())
+	{
+		LauncherImGui::OpenMessageBox(nullptr,
+			"redfetch could not be found. Download it at https://www.redguides.com/community/resources/redfetch.3177/",
+			"RedGuides");
+		return;
+	}
+
+	if (isUpdate)
+	{
+		std::string args = "update";
+		if (ServerType == "live" || ServerType == "test" || ServerType == "emu")
+			args += fmt::format(" --server {}", mq::to_upper_copy(ServerType));
+		ShellExecuteA(nullptr, "open", redfetchPath.c_str(), args.c_str(), nullptr, SW_SHOW);
+	}
+	else
+	{
+		ShellExecuteA(nullptr, "open", redfetchPath.c_str(), nullptr, nullptr, SW_SHOW);
+	}
+}
+
+void ShowRedGuidesMenu()
+{
+	if (ImGui::MenuItem("Update with redfetch"))
+		LaunchRedfetch(true);
+
+	if (ImGui::MenuItem("RedGuides.com"))
+		ShellExecuteA(nullptr, "open", "https://www.redguides.com", nullptr, nullptr, SW_SHOW);
+}
+
+struct RedfetchCheckResult
+{
+	DWORD exitCode = 1;
+	int updateCount = 0;
+};
+
+static std::future<RedfetchCheckResult> s_redfetchCheckFuture;
+
+static RedfetchCheckResult RunRedfetchCheck(std::string redfetchPath)
+{
+	RedfetchCheckResult result;
+
+	SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+	wil::unique_handle hReadPipe;
+	wil::unique_handle hWritePipe;
+	if (!CreatePipe(hReadPipe.addressof(), hWritePipe.addressof(), &sa, 0))
+		return result;
+
+	wil::unique_hfile hNullStderr(CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+		&sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+	if (!hNullStderr)
+		return result;
+
+	SetHandleInformation(hReadPipe.get(), HANDLE_FLAG_INHERIT, 0);
+
+	STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+	si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+	si.hStdOutput = hWritePipe.get();
+	si.hStdError = hNullStderr.get();
+	si.hStdInput = nullptr;
+	si.wShowWindow = SW_HIDE;
+
+	wil::unique_process_information pi;
+
+	int callerResourceId = 1974;
+	if (ServerType == "test") callerResourceId = 2218;
+	else if (ServerType == "emu") callerResourceId = 60;
+
+	std::string cmdLine = fmt::format("\"{}\" check --caller-resource-id {}", redfetchPath, callerResourceId);
+	if (ServerType == "live" || ServerType == "test" || ServerType == "emu")
+		cmdLine += fmt::format(" --server {}", mq::to_upper_copy(ServerType));
+
+	if (!CreateProcessA(nullptr, cmdLine.data(), nullptr, nullptr, TRUE,
+		CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+	{
+		return result;
+	}
+
+	hWritePipe.reset();
+
+	DWORD waitResult = WaitForSingleObject(pi.hProcess, 30000);
+	if (waitResult == WAIT_TIMEOUT)
+	{
+		TerminateProcess(pi.hProcess, 1);
+		return result;
+	}
+
+	char buffer[64] = { 0 };
+	DWORD bytesRead = 0;
+	ReadFile(hReadPipe.get(), buffer, sizeof(buffer) - 1, &bytesRead, nullptr);
+
+	GetExitCodeProcess(pi.hProcess, &result.exitCode);
+
+	// Older redfetch without "check" returns exit code 2 without an update count.
+	if (result.exitCode == 2 && bytesRead == 0)
+	{
+		SPDLOG_DEBUG("redfetch check returned exit code 2 without stdout, ignoring result");
+		result.exitCode = 1;
+		return result;
+	}
+
+	if (result.exitCode == 0 && bytesRead > 0)
+		result.updateCount = atoi(buffer);
+
+	return result;
+}
+
+class RedfetchNotificationHandler : public IWinToastHandler
+{
+public:
+	enum class Action { Update, Interactive };
+
+	RedfetchNotificationHandler(Action action) : m_action(action)
+	{
+	}
+
+	void toastActivated() override
+	{
+		LaunchRedfetch(m_action == Action::Update);
+	}
+
+	void toastActivated(int actionIndex) override
+	{
+	}
+
+	void toastActivated(const char* response) override
+	{
+	}
+
+	void toastDismissed(WinToastDismissalReason state) override
+	{
+	}
+
+	void toastFailed() override
+	{
+	}
+
+private:
+	Action m_action;
+};
+
+static void StartRedfetchCheck()
+{
+	if (mq::GetPrivateProfileBool("MacroQuest", "DisableRedfetchCheck", false, internal_paths::MQini))
+		return;
+
+	std::string redfetchPath = ResolveRedfetchCommand();
+	if (redfetchPath.empty())
+		return;
+
+	s_redfetchCheckFuture = std::async(std::launch::async, RunRedfetchCheck, std::move(redfetchPath));
+}
+
+static void PollRedfetchCheck()
+{
+	if (!s_redfetchCheckFuture.valid())
+		return;
+
+	if (s_redfetchCheckFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+		return;
+
+	RedfetchCheckResult result = s_redfetchCheckFuture.get();
+
+	if (!WinToast::instance()->isInitialized())
+		return;
+
+	std::string firstLine;
+	std::string secondLine;
+	RedfetchNotificationHandler::Action action = RedfetchNotificationHandler::Action::Interactive;
+
+	switch (result.exitCode)
+	{
+	case 0:
+		if (result.updateCount <= 0)
+			return;
+		firstLine = "Script updates available";
+		secondLine = fmt::format("{} update{} available.", result.updateCount, result.updateCount == 1 ? "" : "s");
+		action = RedfetchNotificationHandler::Action::Update;
+		break;
+	case 2:
+		firstLine = "Your Very Vanilla MQ is out of date";
+		secondLine = "A new version of Very Vanilla MQ is available.";
+		action = RedfetchNotificationHandler::Action::Update;
+		break;
+	case 3:
+		firstLine = "redfetch needs attention";
+		secondLine = "redfetch needs you to log in.";
+		break;
+	case 4:
+		firstLine = "Set up redfetch";
+		secondLine = "Configure redfetch to check for updates.";
+		break;
+	default:
+		return;
+	}
+
+	std::shared_ptr<RedfetchNotificationHandler> handler = std::make_shared<RedfetchNotificationHandler>(action);
+
+	WinToastTemplate templ(WinToastTemplate::Text02);
+	templ.setFirstLine(firstLine);
+	templ.setSecondLine(secondLine);
+
+	WinToast::instance()->showToast(templ, handler);
+}
+
+#pragma endregion
+
 void InitializeWindows()
 {
 	WNDCLASS wc;
@@ -2054,11 +2352,16 @@ int WINAPI CALLBACK WinMain(
 	if (!mq::GetPrivateProfileBool("MacroQuest", "DisableAppCompatCheck", disableAppCompatCheck, internal_paths::MQini))
 		CheckAppCompat();
 
+	// RedGuides menu
+	LauncherImGui::AddContextGroup("RedGuides", ShowRedGuidesMenu);
+
 	// EQBC menu
 	LauncherImGui::AddContextGroup("EQBC", ShowEQBCMenu);
 
 	// advanced menu items
 	LauncherImGui::AddContextGroup("##Advanced Menu Items", ShowAdvancedMenu);
+
+	StartRedfetchCheck();
 
 	SPDLOG_INFO("Waiting for events...");
 
@@ -2068,6 +2371,7 @@ int WINAPI CALLBACK WinMain(
 		{
 			ProcessPendingLogins();
 			CheckPruneLogging();
+			PollRedfetchCheck();
 
 			if (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE) != 0)
 			{
