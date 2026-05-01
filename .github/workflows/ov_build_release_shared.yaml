@@ -620,3 +620,15 @@ jobs:
           if ($failed.Count -gt 0) {
             throw "Publish failed for: $($failed -join ', ')"
           }
+
+      # Optional secrets: READY_UPDATE_ENDPOINT, READY_UPDATE_KEY. Body: key + client_target=yes (server maps live|test|emu-rof2 -> Live|Test|Emu).
+      - name: "[Release] Update launcher ready manifest"
+        if: success() && env.vv_enabled == 'true' && secrets.READY_UPDATE_ENDPOINT != '' && secrets.READY_UPDATE_KEY != ''
+        id: ready_update_http
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: ${{ secrets.READY_UPDATE_ENDPOINT }}
+          method: POST
+          contentType: application/x-www-form-urlencoded
+          data: key=${{ secrets.READY_UPDATE_KEY }}&${{ inputs.client_target }}=yes
+          timeout: 60000
