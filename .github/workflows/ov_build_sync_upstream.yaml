@@ -62,6 +62,8 @@ jobs:
         shell: pwsh
         run: |
           Set-Location $env:REPO_DIR
+          git checkout master
+          git pull origin master
           $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
           git tag -f vv-emu-rof2
           git push $auth refs/tags/vv-emu-rof2 --force
