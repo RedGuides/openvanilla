@@ -47,9 +47,9 @@ env:
   vv_enabled: ${{ contains(fromJSON('["live","test","emu-rof2"]'), inputs.client_target) }}
   vv_resource_id: >-
     ${{ fromJSON('{
-      "live":     "1623",
-      "test":     "1742",
-      "emu-rof2": "2296"
+      "live":     "1974",
+      "test":     "2218",
+      "emu-rof2": "60"
     }')[inputs.client_target] }}
   # Bundled in VeryVanilla.zip but symbols go to SPECIAL_SYM_PATH.
   vv_bundled_restricted: '["MQ2GroundSpawns","MQ2CWTNBuffs","CWTNCommons", "MQ2BuffMe", "MQNearby"]'
@@ -365,7 +365,7 @@ jobs:
         run: msbuild src/VVCustom.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64
 
       - name: "[Notify] Discord build SHAs"
-        if: success() && secrets.MQDISCORD_BUILD_SHA_WEBHOOK != ''
+        if: success()
         shell: pwsh
         env:
           MQDISCORD_BUILD_SHA_WEBHOOK: ${{ secrets.MQDISCORD_BUILD_SHA_WEBHOOK }}
@@ -622,20 +622,23 @@ jobs:
             throw "Publish failed for: $($failed -join ', ')"
           }
 
-      # Optional secrets: READY_UPDATE_ENDPOINT, READY_UPDATE_KEY. Body: key + client_target=yes (server maps live|test|emu-rof2 -> Live|Test|Emu).
-      - name: "[Release] Update launcher ready manifest"
-        if: success() && env.vv_enabled == 'true' && secrets.READY_UPDATE_ENDPOINT != '' && secrets.READY_UPDATE_KEY != ''
-        id: ready_update_http
-        uses: fjogeleit/http-request-action@v1
-        with:
-          url: ${{ secrets.READY_UPDATE_ENDPOINT }}
-          method: POST
-          contentType: application/x-www-form-urlencoded
-          data: key=${{ secrets.READY_UPDATE_KEY }}&${{ inputs.client_target }}=yes
-          timeout: 60000
+      - name: "[Release] Update ready manifest"
+        if: success() && env.vv_enabled == 'true'
+        shell: pwsh
+        env:
+          READY_UPDATE_ENDPOINT: ${{ secrets.READY_UPDATE_ENDPOINT }}
+          READY_UPDATE_KEY: ${{ secrets.READY_UPDATE_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:READY_UPDATE_ENDPOINT) -or [string]::IsNullOrWhiteSpace($env:READY_UPDATE_KEY)) {
+            Write-Host 'Skipping ready manifest (endpoint or key not configured).'
+            exit 0
+          }
+          $ct = '${{ inputs.client_target }}'
+          $body = 'key=' + [uri]::EscapeDataString($env:READY_UPDATE_KEY) + '&' + $ct + '=yes'
+          Invoke-WebRequest -Uri $env:READY_UPDATE_ENDPOINT -Method Post -Body $body -ContentType 'application/x-www-form-urlencoded' -TimeoutSec 60 -UseBasicParsing
 
       - name: "[Notify] Discord completion"
-        if: success() && secrets.MQDISCORD_DEV_WEBHOOK != ''
+        if: success()
         shell: pwsh
         env:
           MQDISCORD_DEV_WEBHOOK: ${{ secrets.MQDISCORD_DEV_WEBHOOK }}
@@ -650,7 +653,7 @@ jobs:
         continue-on-error: true
 
       - name: "[Notify] Discord build failure"
-        if: failure() && secrets.MQDISCORD_DEV_WEBHOOK != ''
+        if: failure()
         shell: pwsh
         env:
           MQDISCORD_DEV_WEBHOOK: ${{ secrets.MQDISCORD_DEV_WEBHOOK }}
