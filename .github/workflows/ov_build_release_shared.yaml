@@ -364,6 +364,24 @@ jobs:
         if: env.vv_enabled == 'true'
         run: msbuild src/VVCustom.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64
 
+      - name: "[Notify] Discord build SHAs"
+        if: success() && secrets.MQDISCORD_BUILD_SHA_WEBHOOK != ''
+        shell: pwsh
+        env:
+          MQDISCORD_BUILD_SHA_WEBHOOK: ${{ secrets.MQDISCORD_BUILD_SHA_WEBHOOK }}
+        run: |
+          $shaVV = git rev-parse --short HEAD
+          $shaEqlib = git -C src/eqlib rev-parse --short HEAD
+          $shaCWTN = if (Test-Path plugins/CWTN) { git -C plugins/CWTN rev-parse --short HEAD } else { 'n/a' }
+          $desc = "**eqlib** $shaEqlib`n**vv** $shaVV`n**cwtn** $shaCWTN"
+          $embed = [PSCustomObject]@{
+            title       = "${{ inputs.client_target }} build ${{ github.run_number }}"
+            description = $desc
+          }
+          $payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 6
+          Invoke-RestMethod -Uri $env:MQDISCORD_BUILD_SHA_WEBHOOK -Method Post -Body $payload -ContentType 'application/json'
+        continue-on-error: true
+
       - name: "[Symbols] Update Symbol Server"
         shell: pwsh
         run: |
@@ -562,23 +580,6 @@ jobs:
         run: |
           gh release create ${{ github.ref_name }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" ${{ env.gh_release_flag }} build/bin/MacroQuest.zip
 
-      - name: "[Release] Send Discord Notice"
-        if: false # disabled while iterating on the workflow
-        shell: pwsh
-        run: |
-          [System.Collections.ArrayList]$embedArray = @()
-          $embedObject = [PSCustomObject]@{
-              color = "4289797"
-              title = "New MacroQuest (${{ inputs.client_target }}) Build $($env:MQVERSION_INFO)"
-              description = "Build has been uploaded to: https://github.com/${{ github.repository }}/releases/tag/$($env:GITHUB_REF_NAME)"
-          }
-          $embedArray.Add($embedObject) | Out-Null
-          $discordPayload = [PSCustomObject]@{
-              embeds = $embedArray
-          } | ConvertTo-Json
-          Invoke-RestMethod -Uri '${{ secrets.MQDISCORD_WEBHOOK }}' -Method Post -Body $discordPayload -ContentType 'application/json'
-        continue-on-error: true
-
       - name: "[Release] Publish to RedGuides"
         if: env.vv_enabled == 'true'
         shell: pwsh
@@ -632,3 +633,34 @@ jobs:
           contentType: application/x-www-form-urlencoded
           data: key=${{ secrets.READY_UPDATE_KEY }}&${{ inputs.client_target }}=yes
           timeout: 60000
+
+      - name: "[Notify] Discord completion"
+        if: success() && secrets.MQDISCORD_DEV_WEBHOOK != ''
+        shell: pwsh
+        env:
+          MQDISCORD_DEV_WEBHOOK: ${{ secrets.MQDISCORD_DEV_WEBHOOK }}
+        run: |
+          $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $embed = [PSCustomObject]@{
+            title       = "${{ github.run_number }} Complete"
+            description = "**${{ inputs.client_target }}** and its cargo of symbols have arrived unharmed.`n[View run]($runUrl)"
+          }
+          $payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 6
+          Invoke-RestMethod -Uri $env:MQDISCORD_DEV_WEBHOOK -Method Post -Body $payload -ContentType 'application/json'
+        continue-on-error: true
+
+      - name: "[Notify] Discord build failure"
+        if: failure() && secrets.MQDISCORD_DEV_WEBHOOK != ''
+        shell: pwsh
+        env:
+          MQDISCORD_DEV_WEBHOOK: ${{ secrets.MQDISCORD_DEV_WEBHOOK }}
+        run: |
+          $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $embed = [PSCustomObject]@{
+            color       = 15548997
+            title       = "Pipeline Failed: ${{ github.run_number }}"
+            description = "**${{ inputs.client_target }}** isn't going to make it.`n[View run]($runUrl)"
+          }
+          $payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 6
+          Invoke-RestMethod -Uri $env:MQDISCORD_DEV_WEBHOOK -Method Post -Body $payload -ContentType 'application/json'
+        continue-on-error: true
