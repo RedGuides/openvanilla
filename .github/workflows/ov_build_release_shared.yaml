@@ -25,12 +25,12 @@ env:
   # Version revision map -- update this when adding new client targets
   version_rev: >-
     ${{ fromJSON('{
-      "live":          1,
-      "test":          2,
-      "beta-emu-rof2": 3,
-      "emu-rof2":      4,
-      "beta-emu-tob":  5,
-      "emu-tob":       6
+      "live":          52471,
+      "test":          52472,
+      "beta-emu-rof2": 52473,
+      "emu-rof2":      52474,
+      "beta-emu-tob":  52475,
+      "emu-tob":       52476
     }')[inputs.client_target] }}
   # Default ini profile for the target client
   mq_default_ini_profile: >-
@@ -291,6 +291,13 @@ jobs:
           $versionInfo = $versionInfo -replace '#define MQMAIN_GIT_HASH "(.*)"', "#define MQMAIN_GIT_HASH `"$(git rev-parse --short HEAD)`""
           $versionInfo | Set-Content $versionFile
 
+          # Export the full MAJOR.MINOR.REV.BUILD string for downstream steps.
+          $joined = $versionInfo -join "`n"
+          if ($joined -match '#define MQMAIN_VERSION_MAJOR\s+(\d+)') { $major = $matches[1] } else { $major = '?' }
+          if ($joined -match '#define MQMAIN_VERSION_MINOR\s+(\d+)') { $minor = $matches[1] } else { $minor = '?' }
+          $fullVersion = "$major.$minor.${{ env.version_rev }}.${{ github.run_number }}"
+          echo "MQ_FULL_VERSION=$fullVersion" >> $env:GITHUB_ENV
+
       - name: "[Configure] Set Versioning for eqlib"
         shell: pwsh
         run: |
@@ -375,7 +382,7 @@ jobs:
           $shaCWTN = if (Test-Path plugins/CWTN) { git -C plugins/CWTN rev-parse --short HEAD } else { 'n/a' }
           $desc = "**eqlib** $shaEqlib`n**vv** $shaVV`n**cwtn** $shaCWTN"
           $embed = [PSCustomObject]@{
-            title       = "${{ inputs.client_target }} build ${{ github.run_number }}"
+            title       = "${{ inputs.client_target }} build $env:MQ_FULL_VERSION"
             description = $desc
           }
           $payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 6
@@ -645,7 +652,7 @@ jobs:
         run: |
           $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           $embed = [PSCustomObject]@{
-            title       = "${{ github.run_number }} Complete"
+            title       = "$env:MQ_FULL_VERSION Complete"
             description = "**${{ inputs.client_target }}** and its cargo of symbols have arrived unharmed.`n[View run]($runUrl)"
           }
           $payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 6
@@ -659,9 +666,10 @@ jobs:
           MQDISCORD_DEV_WEBHOOK: ${{ secrets.MQDISCORD_DEV_WEBHOOK }}
         run: |
           $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $version = if ($env:MQ_FULL_VERSION) { $env:MQ_FULL_VERSION } else { "build ${{ github.run_number }}" }
           $embed = [PSCustomObject]@{
             color       = 15548997
-            title       = "Pipeline Failed: ${{ github.run_number }}"
+            title       = "Pipeline Failed: $version"
             description = "**${{ inputs.client_target }}** isn't going to make it.`n[View run]($runUrl)"
           }
           $payload = [PSCustomObject]@{ embeds = @($embed) } | ConvertTo-Json -Depth 6
