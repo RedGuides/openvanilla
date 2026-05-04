@@ -467,15 +467,24 @@ jobs:
 
       - name: "[Package] Sign Code"
         shell: pwsh
+        env:
+          KMS_KEY: projects/code-signing-rg/locations/global/keyRings/redkeys/cryptoKeys/rgkey/cryptoKeyVersions/1
         run: |
-          $SignCert = "build/bin/signcert.pfx"
-          [IO.File]::WriteAllBytes($SignCert, [Convert]::FromBase64String("${{ secrets.SIGNCERT }}"))
-          $FileList = Get-ChildItem -Path "build/bin/release" -Recurse -Include *.exe, *.dll | Where-Object { $_.Name -ne "D3DX9_43.dll" }
-          $signtool = (Get-ChildItem -Recurse "${ENV:ProgramFiles(x86)}\Windows Kits" -Filter signtool.exe | Where-Object { $_.FullName -notmatch 'arm' } | Sort-Object LastWriteTime | Select-Object -last 1).FullName
+          $CertFile = "${{ github.workspace }}\build\bin\user.crt"
+          $KeyFile = "${{ github.workspace }}\build\bin\gcp-sa.json"
+          [IO.File]::WriteAllBytes($CertFile, [Convert]::FromBase64String("${{ secrets.SIGNING_CERT }}"))
+          [IO.File]::WriteAllText($KeyFile, "${{ secrets.GCP_SA_KEY }}")
+          $env:GOOGLE_APPLICATION_CREDENTIALS = $KeyFile
+          $FileList = Get-ChildItem -Path "build/bin/release" -Recurse -Include *.exe, *.dll |
+            Where-Object { $_.Name -ne "D3DX9_43.dll" }
+          $signtool = (Get-ChildItem -Recurse "${ENV:ProgramFiles(x86)}\Windows Kits" -Filter signtool.exe |
+            Where-Object { $_.FullName -notmatch 'arm' } | Sort-Object LastWriteTime | Select-Object -last 1).FullName
           ForEach ($file in $FileList) {
-            & $signtool sign /fd SHA256 /f "$SignCert" /p "${{ secrets.SIGNCERT_PASS }}" /t http://timestamp.digicert.com "$file" | Out-Null
+            & $signtool sign /fd SHA256 /f $CertFile /csp "Google Cloud KMS Provider" /kc $env:KMS_KEY `
+              /tr http://timestamp.digicert.com /td sha256 "$file"
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file" }
           }
-          Remove-Item -Force build/bin/signcert.pfx
+          Remove-Item -Force $CertFile, $KeyFile
 
       - name: "[Package] Create MacroQuest Archive"
         shell: pwsh
