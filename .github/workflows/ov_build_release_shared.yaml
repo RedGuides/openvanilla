@@ -469,11 +469,13 @@ jobs:
         shell: pwsh
         env:
           KMS_KEY: projects/code-signing-rg/locations/global/keyRings/redkeys/cryptoKeys/rgkey/cryptoKeyVersions/1
+          SIGNING_CERT: ${{ secrets.SIGNING_CERT }}
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: |
           $CertFile = "${{ github.workspace }}\build\bin\user.crt"
           $KeyFile = "${{ github.workspace }}\build\bin\gcp-sa.json"
-          [IO.File]::WriteAllBytes($CertFile, [Convert]::FromBase64String("${{ secrets.SIGNING_CERT }}"))
-          [IO.File]::WriteAllText($KeyFile, "${{ secrets.GCP_SA_KEY }}")
+          [IO.File]::WriteAllBytes($CertFile, [Convert]::FromBase64String($env:SIGNING_CERT))
+          [IO.File]::WriteAllText($KeyFile, $env:GCP_SA_KEY)
           $env:GOOGLE_APPLICATION_CREDENTIALS = $KeyFile
           $FileList = Get-ChildItem -Path "build/bin/release" -Recurse -Include *.exe, *.dll |
             Where-Object { $_.Name -ne "D3DX9_43.dll" }
