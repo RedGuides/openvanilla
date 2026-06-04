@@ -98,16 +98,82 @@ void MQPostOffice::NotifyIsForegroundWindow(bool isForeground)
 	m_pipeClient.SendMessage(MQMessageId::MSG_MAIN_FOCUS_REQUEST, &request, sizeof(request));
 }
 
+/**
+ * @fn WindowIsForeground
+ *
+ * @brief Returns true if hWnd is foregrounded and not iconic.
+ *
+ * A foregrounded window should not be iconic, but it can be reported
+ * as foreground and still iconic. This check makes sure that we're not
+ * treating it as foregrounded if it is still iconic.
+ *
+ * @param hWnd The window to check
+ *
+ * @return bool Whether the window is foregrounded and not iconic
+ **/
+static bool WindowIsForeground(HWND hWnd)
+{
+	return ::GetForegroundWindow() == hWnd && !::IsIconic(hWnd);
+}
+
+/**
+ * @fn MinRestoreWindow
+ *
+ * @brief Brings a window forward using the minimize/restore trick. Used with /foreground.
+ *
+ * The first attempt uses min/restore, or just restore if the window is already minimized.
+ * The redundant minimize on an already minimized window sometimes leaves it stuck
+ * iconic while GetForegroundWindow() reports success.
+ *
+ * Setting foreground window privileges from our own process before the min/restore
+ * will error on some systems, leaving the window in a false state. However, we can
+ * use this as a fallback since we're already in a poor state at the point the first
+ * call didn't work.
+ *
+ * @param hWnd The target window to bring forward
+ *
+ * @return bool Result of WindowIsForeground() after both attempts
+ **/
+static bool MinRestoreWindow(HWND hWnd)
+{
+	if (IsIconic(hWnd))
+	{
+		ShowWindow(hWnd, SW_RESTORE);
+	}
+	else
+	{
+		ShowWindow(hWnd, SW_MINIMIZE);
+		ShowWindow(hWnd, SW_RESTORE);
+	}
+
+	if (!WindowIsForeground(hWnd))
+	{
+		// try forcing foreground and activating again
+		::SetForegroundWindow(hWnd);
+		if (IsIconic(hWnd))
+		{
+			ShowWindow(hWnd, SW_RESTORE);
+		}
+		else
+		{
+			ShowWindow(hWnd, SW_MINIMIZE);
+			ShowWindow(hWnd, SW_RESTORE);
+		}
+	}
+
+	return WindowIsForeground(hWnd);
+}
+
 void MQPostOffice::RequestActivateWindow(HWND hWnd, bool isOriginator)
 {
-	if (::GetForegroundWindow() == hWnd)
+	if (WindowIsForeground(hWnd))
 	{
 		return;
 	}
 
 	if (!isOriginator)
 	{
-		// The launcher itself is foreground. 
+		// The launcher itself is foreground.
 
 		// We should be the foreground instance. We have privilege, so grant it to the
 		// target and ask it to foreground itself. Us foregrounding it has odd behavior.
@@ -137,10 +203,7 @@ void MQPostOffice::RequestActivateWindow(HWND hWnd, bool isOriginator)
 		}
 		else
 		{
-			ShowWindow(hWnd, SW_MINIMIZE);
-			ShowWindow(hWnd, SW_RESTORE);
-
-			if (::GetForegroundWindow() != hWnd)
+			if (!MinRestoreWindow(hWnd))
 			{
 				WriteChatf("\ar/foreground: failed to activate the window locally and no pipe is available.");
 			}
@@ -257,12 +320,9 @@ void MQPostOffice::OnIncomingMessage(PipeMessagePtr message)
 		if (message->size() >= sizeof(MQMessageActivateWnd))
 		{
 			const HWND hWnd = (HWND)message->get<MQMessageActivateWnd>()->hWnd;
-			if (IsWindow(hWnd) && ::GetForegroundWindow() != hWnd)
+			if (IsWindow(hWnd) && !WindowIsForeground(hWnd))
 			{
-				ShowWindow(hWnd, SW_MINIMIZE);
-				ShowWindow(hWnd, SW_RESTORE);
-
-				if (::GetForegroundWindow() != hWnd)
+				if (!MinRestoreWindow(hWnd))
 				{
 					WriteChatf("\ar/foreground: failed to activate window after multiple attempts.");
 				}
@@ -274,7 +334,7 @@ void MQPostOffice::OnIncomingMessage(PipeMessagePtr message)
 		if (message->size() >= sizeof(MQMessageActivateWnd))
 		{
 			const HWND hWnd = (HWND)message->get<MQMessageActivateWnd>()->hWnd;
-			if (IsWindow(hWnd) && ::GetForegroundWindow() != hWnd)
+			if (IsWindow(hWnd) && !WindowIsForeground(hWnd))
 			{
 				if (IsIconic(hWnd))
 				{
@@ -283,12 +343,9 @@ void MQPostOffice::OnIncomingMessage(PipeMessagePtr message)
 
 				::SetForegroundWindow(hWnd);
 
-				if (::GetForegroundWindow() != hWnd)
+				if (!WindowIsForeground(hWnd))
 				{
-					ShowWindow(hWnd, SW_MINIMIZE);
-					ShowWindow(hWnd, SW_RESTORE);
-
-					if (::GetForegroundWindow() != hWnd)
+					if (!MinRestoreWindow(hWnd))
 					{
 						WriteChatf("\ar/foreground: failed to activate window after granting privileges.");
 					}
