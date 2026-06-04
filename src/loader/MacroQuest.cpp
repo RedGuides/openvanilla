@@ -55,7 +55,6 @@
 #include <fcntl.h>
 #include <shlwapi.h>
 #include <shlobj.h>
-#include <knownfolders.h>
 #include <aclapi.h>
 #include <sddl.h>
 
@@ -1794,10 +1793,13 @@ static bool ConfirmRedfetchUpdateTarget()
 		|| RedfetchManagesThisInstall(status->managedPath))
 		return true;
 
+	// Match MQRoot's ACP encoding for the narrow MessageBox (managedPath is UTF-8 from JSON).
+	const std::string managedDisplay = fs::path(mq::utf8_to_wstring(status->managedPath)).string();
+
 	const std::string message = fmt::format(
 		"redfetch manages a different MacroQuest for {}.\n\n"
 		"Launched from:\n{}\n\nWill update:\n{}\n\nUpdate anyway?",
-		env, internal_paths::MQRoot, status->managedPath);
+		env, internal_paths::MQRoot, managedDisplay);
 
 	return MessageBox(nullptr, message.c_str(), "redfetch",
 		MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
@@ -1893,11 +1895,12 @@ static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::strin
 	const bool hasNew = std::any_of(currentKeys.begin(), currentKeys.end(),
 		[&storedKeys](const std::string& key) { return storedKeys.find(key) == storedKeys.end(); });
 
-	state["envs"][env]["notified"] = currentKeys;
-	WriteRedfetchCheckState(state);
-
 	if (!hasNew)
+	{
+		state["envs"][env]["notified"] = currentKeys;
+		WriteRedfetchCheckState(state);
 		return;
+	}
 
 	std::shared_ptr<RedfetchNotificationHandler> handler = std::make_shared<RedfetchNotificationHandler>(action);
 
@@ -1906,7 +1909,12 @@ static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::strin
 	templ.setSecondLine(secondLine);
 	templ.addAction(actionLabel);
 
-	WinToast::instance()->showToast(templ, handler);
+	// Record the notification only once it displays
+	if (WinToast::instance()->showToast(templ, handler) < 0)
+		return;
+
+	state["envs"][env]["notified"] = currentKeys;
+	WriteRedfetchCheckState(state);
 }
 
 struct RedfetchCheckResult
@@ -1937,21 +1945,30 @@ static void RunRedfetchCheck(fs::path redfetchPath, std::string env,
 	{
 		SPDLOG_WARN("Failed to spawn redfetch check: error {}", ::GetLastError());
 	}
-	else if (WaitForSingleObject(pi.hProcess, 30000) == WAIT_TIMEOUT)
-	{
-		SPDLOG_WARN("redfetch check timed out after 30s; terminating");
-		TerminateProcess(pi.hProcess, 1);
-	}
 	else
 	{
-		DWORD exitCode = 1;
-		GetExitCodeProcess(pi.hProcess, &exitCode);
+		constexpr DWORD checkTimeoutMs = 30000;
+		const DWORD waitResult = WaitForSingleObject(pi.hProcess, checkTimeoutMs);
+		if (waitResult == WAIT_OBJECT_0)
+		{
+			DWORD exitCode = 1;
+			GetExitCodeProcess(pi.hProcess, &exitCode);
 
-		// exit 1 = couldn't determine status; the prior file is left untouched.
-		if (exitCode == 0)
-			result->status = ReadRedfetchUpdateStatus();
+			// exit 1 = couldn't determine status; the prior file is left untouched.
+			if (exitCode == 0)
+				result->status = ReadRedfetchUpdateStatus();
+			else
+				SPDLOG_DEBUG("redfetch check exited with code {}; no fresh status this cycle", exitCode);
+		}
+		else if (waitResult == WAIT_TIMEOUT)
+		{
+			SPDLOG_WARN("redfetch check timed out after 30s; terminating");
+			TerminateProcess(pi.hProcess, 1);
+		}
 		else
-			SPDLOG_DEBUG("redfetch check exited with code {}; no fresh status this cycle", exitCode);
+		{
+			SPDLOG_WARN("redfetch check wait failed: error {}", ::GetLastError());
+		}
 	}
 
 	// Hand off to the main thread
@@ -1978,7 +1995,8 @@ static void StartRedfetchCheck()
 	if (redfetchPath.empty())
 		return; // feature inactive without redfetch
 
-	const int intervalMinutes = mq::GetPrivateProfileInt("MacroQuest", "RedfetchCheckIntervalMinutes", 30, internal_paths::MQini);
+	constexpr int defaultIntervalMinutes = 30;
+	const int intervalMinutes = mq::GetPrivateProfileInt("MacroQuest", "RedfetchCheckIntervalMinutes", defaultIntervalMinutes, internal_paths::MQini);
 	const auto interval = std::chrono::minutes((std::max)(intervalMinutes, 0));
 	const auto now = std::chrono::system_clock::now();
 
@@ -2024,8 +2042,9 @@ static void HandleRedfetchCheckResult(uintptr_t resultPtr)
 		return; // spawn failed, timed out, or wrote nothing fresh
 
 	// Require checked_at to advance
+	constexpr auto freshnessGrace = std::chrono::seconds(2);
 	if (!result->status->checkedAt
-		|| *result->status->checkedAt < result->spawnStart - std::chrono::seconds(2))
+		|| *result->status->checkedAt < result->spawnStart - freshnessGrace)
 	{
 		SPDLOG_DEBUG("redfetch update status did not advance past spawn start; treating as no fresh data");
 		return;
