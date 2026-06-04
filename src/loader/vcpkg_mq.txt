@@ -4,5 +4,6 @@ wil
 date
 curl
 cpr
+nlohmann-json
 pe-parse
 protobuf
