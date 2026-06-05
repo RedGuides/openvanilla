@@ -1368,17 +1368,11 @@ static std::string GetRedfetchEnv()
 
 static fs::path GetLocalAppDataPath()
 {
-	PWSTR rawPath = nullptr;
-	const HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &rawPath);
-	if (FAILED(hr))
-	{
-		CoTaskMemFree(rawPath);
+	wil::unique_cotaskmem_string rawPath;
+	if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &rawPath)))
 		return {};
-	}
 
-	fs::path result(rawPath);
-	CoTaskMemFree(rawPath);
-	return result;
+	return fs::path(rawPath.get());
 }
 
 static fs::path ReadBreadcrumbProgram()
@@ -1400,12 +1394,17 @@ static fs::path ReadBreadcrumbProgram()
 	try
 	{
 		const nlohmann::json doc = nlohmann::json::parse(file);
-		const std::string program = doc.value("program", std::string());
-		if (program.empty())
+
+		const auto program = doc.find("program");
+		if (program == doc.end() || !program->is_string())
+			return {};
+
+		const std::string programPath = program->get<std::string>();
+		if (programPath.empty())
 			return {};
 
 		// redfetch writes UTF-8
-		return fs::path(mq::utf8_to_wstring(program));
+		return fs::path(mq::utf8_to_wstring(programPath));
 	}
 	catch (const nlohmann::json::exception& ex)
 	{
@@ -1539,6 +1538,7 @@ struct RedfetchStatus
 	std::vector<RedfetchUpdateItem> items;
 };
 
+// Reads status file from redfetch
 static std::optional<RedfetchStatus> ReadRedfetchUpdateStatus()
 {
 	const fs::path localAppData = GetLocalAppDataPath();
@@ -1560,9 +1560,18 @@ static std::optional<RedfetchStatus> ReadRedfetchUpdateStatus()
 		const nlohmann::json doc = nlohmann::json::parse(file);
 
 		RedfetchStatus status;
-		status.schemaVersion = doc.value("schema_version", 0);
-		status.env = doc.value("env", std::string());
-		status.authState = doc.value("auth_state", std::string());
+
+		const auto schemaVersion = doc.find("schema_version");
+		if (schemaVersion != doc.end() && schemaVersion->is_number_integer())
+			status.schemaVersion = schemaVersion->get<int>();
+
+		const auto env = doc.find("env");
+		if (env != doc.end() && env->is_string())
+			status.env = env->get<std::string>();
+
+		const auto authState = doc.find("auth_state");
+		if (authState != doc.end() && authState->is_string())
+			status.authState = authState->get<std::string>();
 
 		const auto managed = doc.find("managed_path");
 		if (managed != doc.end() && managed->is_string())
@@ -1584,10 +1593,23 @@ static std::optional<RedfetchStatus> ReadRedfetchUpdateStatus()
 			{
 				for (const auto& item : *items)
 				{
+					if (!item.is_object())
+						continue;
+
 					RedfetchUpdateItem entry;
-					entry.resourceId = item.value("resource_id", std::string());
-					entry.name = item.value("name", std::string());
-					entry.availableVersionId = item.value("available_version_id", static_cast<int64_t>(0));
+
+					const auto resourceId = item.find("resource_id");
+					if (resourceId != item.end() && resourceId->is_string())
+						entry.resourceId = resourceId->get<std::string>();
+
+					const auto name = item.find("name");
+					if (name != item.end() && name->is_string())
+						entry.name = name->get<std::string>();
+
+					const auto availableVersionId = item.find("available_version_id");
+					if (availableVersionId != item.end() && availableVersionId->is_number_integer())
+						entry.availableVersionId = availableVersionId->get<int64_t>();
+
 					status.items.push_back(std::move(entry));
 				}
 			}
@@ -1634,30 +1656,19 @@ static nlohmann::json ReadRedfetchCheckState()
 	return nlohmann::json::object();
 }
 
-static void WriteRedfetchCheckState(nlohmann::json doc)
+static void WriteRedfetchCheckState(const nlohmann::json& doc)
 {
-	doc["schema_version"] = 1;
-
 	const fs::path statePath = RedfetchCheckStatePath();
-	fs::path tmpPath = statePath;
-	tmpPath += L".tmp";
 
 	try
 	{
+		std::ofstream file(statePath, std::ios::binary | std::ios::trunc);
+		if (!file.is_open())
 		{
-			std::ofstream file(tmpPath, std::ios::binary | std::ios::trunc);
-			if (!file.is_open())
-			{
-				SPDLOG_DEBUG("Failed to open redfetch check state temp {} for write", tmpPath.string());
-				return;
-			}
-			file << doc.dump(2);
+			SPDLOG_DEBUG("Failed to open redfetch check state {} for write", statePath.string());
+			return;
 		}
-
-		std::error_code ec;
-		fs::rename(tmpPath, statePath, ec); // replaces an existing target on Windows
-		if (ec)
-			SPDLOG_DEBUG("Failed to commit redfetch check state {}: {}", statePath.string(), ec.message());
+		file << doc.dump(2);
 	}
 	catch (const std::exception& ex)
 	{
