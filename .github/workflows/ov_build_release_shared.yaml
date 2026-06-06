@@ -6,19 +6,6 @@ on:
       client_target:
         required: true
         type: string
-  workflow_dispatch:
-    inputs:
-      client_target:
-        required: true
-        type: choice
-        # These should also be updated in the version_rev map below when adding new targets
-        options:
-        - live
-        - test
-        - emu-rof2
-        - emu-tob
-        - beta-emu-rof2
-        - beta-emu-tob
 
 env:
   platform: "${{ contains(inputs.client_target, 'rof2') && 'Win32' || 'x64' }}"
