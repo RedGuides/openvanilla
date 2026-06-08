@@ -12,6 +12,7 @@
       "date",
       { "name": "curl", "features": [ "schannel" ] },
       "cpr",
+      "nlohmann-json",
       "pe-parse",
       "protobuf"
   ]

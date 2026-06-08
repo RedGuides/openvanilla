@@ -34,6 +34,7 @@
 
 #include "date/date.h"
 #include "fmt/format.h"
+#include "nlohmann/json.hpp"
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/sinks/ringbuffer_sink.h"
@@ -43,9 +44,12 @@
 #include "wil/registry.h"
 #include "wil/resource.h"
 
+#include <ctime>
 #include <filesystem>
 #include <fstream>
-#include <future>
+#include <optional>
+#include <set>
+#include <thread>
 #include <tuple>
 #include <shellapi.h>
 #include <fcntl.h>
@@ -1035,6 +1039,8 @@ void CheckAppCompat(bool alwaysDisplay = false)
 	}
 }
 
+static void HandleRedfetchCheckResult(uintptr_t resultPtr);
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 {
 	if (LauncherImGui::HandleWndProc(hWnd, MSG, wParam, lParam))
@@ -1072,6 +1078,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 
 	case WM_USER_PROCESS_REMOVED:
 		OnProcessRemoved(static_cast<uint32_t>(wParam));
+		break;
+
+	case WM_USER_REDFETCH_CHECK:
+		HandleRedfetchCheckResult(static_cast<uintptr_t>(wParam));
 		break;
 
 	case WM_USER_HOTKEY_ADD:
@@ -1347,26 +1357,31 @@ void ShowAdvancedMenu()
 
 #pragma region RedGuides
 
-static std::string UnescapeJsonString(const std::string& raw)
+// redfetch scopes everything by env (LIVE/TEST/EMU)
+static std::string GetRedfetchEnv()
 {
-	std::string result;
-	result.reserve(raw.size());
-	for (size_t i = 0; i < raw.size(); ++i)
-	{
-		if (raw[i] == '\\' && i + 1 < raw.size())
-			++i;
-		result += raw[i];
-	}
-	return result;
+	if (ServerType == "live" || ServerType == "test" || ServerType == "emu")
+		return mq::to_upper_copy(ServerType);
+
+	return {};
 }
 
-static std::string ReadBreadcrumbProgram()
+static fs::path GetLocalAppDataPath()
 {
-	char localAppData[MAX_PATH] = { 0 };
-	if (FAILED(SHGetFolderPathA(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData)))
+	wil::unique_cotaskmem_string rawPath;
+	if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &rawPath)))
 		return {};
 
-	auto breadcrumbPath = fs::path(localAppData) / "RedGuides" / "redfetch" / "last_command.json";
+	return fs::path(rawPath.get());
+}
+
+static fs::path ReadBreadcrumbProgram()
+{
+	const fs::path localAppData = GetLocalAppDataPath();
+	if (localAppData.empty())
+		return {};
+
+	const fs::path breadcrumbPath = localAppData / "RedGuides" / "redfetch" / "last_command.json";
 
 	std::error_code ec;
 	if (!fs::exists(breadcrumbPath, ec))
@@ -1376,83 +1391,90 @@ static std::string ReadBreadcrumbProgram()
 	if (!file.is_open())
 		return {};
 
-	std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-	auto keyPos = content.find("\"program\"");
-	if (keyPos == std::string::npos)
-		return {};
-
-	auto colonPos = content.find(':', keyPos + 9);
-	if (colonPos == std::string::npos)
-		return {};
-
-	auto quoteStart = content.find('"', colonPos + 1);
-	if (quoteStart == std::string::npos)
-		return {};
-
-	size_t quoteEnd = quoteStart + 1;
-	while (quoteEnd < content.size())
+	try
 	{
-		if (content[quoteEnd] == '\\')
-		{
-			quoteEnd += 2;
-			continue;
-		}
-		if (content[quoteEnd] == '"')
-			break;
-		++quoteEnd;
+		const nlohmann::json doc = nlohmann::json::parse(file);
+
+		const auto program = doc.find("program");
+		if (program == doc.end() || !program->is_string())
+			return {};
+
+		const std::string programPath = program->get<std::string>();
+		if (programPath.empty())
+			return {};
+
+		// redfetch writes UTF-8
+		return fs::path(mq::utf8_to_wstring(programPath));
 	}
-
-	if (quoteEnd >= content.size())
+	catch (const nlohmann::json::exception& ex)
+	{
+		SPDLOG_DEBUG("Failed to parse redfetch breadcrumb {}: {}", breadcrumbPath.string(), ex.what());
 		return {};
-
-	return UnescapeJsonString(content.substr(quoteStart + 1, quoteEnd - quoteStart - 1));
+	}
 }
 
-static std::string ResolveRedfetchCommand()
+static fs::path ResolveRedfetchCommand()
 {
 	std::error_code ec;
 
-	std::string iniOverride = mq::GetPrivateProfileString("MacroQuest", "RedfetchCommand", "", internal_paths::MQini);
-	if (!iniOverride.empty() && fs::exists(iniOverride, ec))
-		return iniOverride;
-
-	std::string breadcrumb = ReadBreadcrumbProgram();
-	if (!breadcrumb.empty() && fs::exists(breadcrumb, ec))
-		return breadcrumb;
-
-	char pathResult[MAX_PATH] = { 0 };
-	if (SearchPathA(nullptr, "redfetch.exe", nullptr, MAX_PATH, pathResult, nullptr) > 0
-		&& fs::exists(pathResult, ec))
+	const std::string iniOverride = mq::GetPrivateProfileString("MacroQuest", "RedfetchCommand", "", internal_paths::MQini);
+	if (!iniOverride.empty())
 	{
-		return pathResult;
+		const fs::path overridePath(iniOverride);
+		if (fs::exists(overridePath, ec))
+		{
+			SPDLOG_DEBUG("Resolved redfetch from INI override: {}", overridePath.string());
+			return overridePath;
+		}
 	}
 
+	const fs::path breadcrumb = ReadBreadcrumbProgram();
+	if (!breadcrumb.empty() && fs::exists(breadcrumb, ec))
+	{
+		SPDLOG_DEBUG("Resolved redfetch from breadcrumb: {}", breadcrumb.string());
+		return breadcrumb;
+	}
+
+	wchar_t pathResult[MAX_PATH] = { 0 };
+	if (SearchPathW(nullptr, L"redfetch.exe", nullptr, MAX_PATH, pathResult, nullptr) > 0)
+	{
+		const fs::path searchPath(pathResult);
+		if (fs::exists(searchPath, ec))
+		{
+			SPDLOG_DEBUG("Resolved redfetch from PATH: {}", searchPath.string());
+			return searchPath;
+		}
+	}
+
+	SPDLOG_DEBUG("redfetch could not be resolved (INI override, breadcrumb, and PATH all failed)");
 	return {};
 }
 
+static bool ConfirmRedfetchUpdateTarget(); // defined with the status helpers below
+
 static void LaunchRedfetch(bool isUpdate = false)
 {
-	std::string redfetchPath = ResolveRedfetchCommand();
+	const fs::path redfetchPath = ResolveRedfetchCommand();
 	if (redfetchPath.empty())
 	{
-		LauncherImGui::OpenMessageBox(nullptr,
-			"redfetch could not be found. Download it at https://www.redguides.com/community/resources/redfetch.3177/",
-			"RedGuides");
+		SPDLOG_DEBUG("redfetch launch skipped: redfetch could not be resolved");
 		return;
 	}
 
+	if (isUpdate && !ConfirmRedfetchUpdateTarget())
+		return;
+
+	std::wstring args;
 	if (isUpdate)
 	{
-		std::string args = "update";
-		if (ServerType == "live" || ServerType == "test" || ServerType == "emu")
-			args += fmt::format(" --server {}", mq::to_upper_copy(ServerType));
-		ShellExecuteA(nullptr, "open", redfetchPath.c_str(), args.c_str(), nullptr, SW_SHOW);
+		args = L"update";
+		const std::string env = GetRedfetchEnv();
+		if (!env.empty())
+			args += L" --server " + mq::utf8_to_wstring(env);
 	}
-	else
-	{
-		ShellExecuteA(nullptr, "open", redfetchPath.c_str(), nullptr, nullptr, SW_SHOW);
-	}
+
+	ShellExecuteW(nullptr, L"open", redfetchPath.wstring().c_str(),
+		args.empty() ? nullptr : args.c_str(), nullptr, SW_SHOW);
 }
 
 void ShowRedGuidesMenu()
@@ -1460,103 +1482,277 @@ void ShowRedGuidesMenu()
 	if (ImGui::MenuItem("Update with redfetch"))
 		LaunchRedfetch(true);
 
+	ImGui::Separator();
+
 	if (ImGui::MenuItem("RedGuides.com"))
 		ShellExecuteA(nullptr, "open", "https://www.redguides.com", nullptr, nullptr, SW_SHOW);
+	if (ImGui::MenuItem("RG Docs"))
+		ShellExecuteA(nullptr, "open", "https://www.redguides.com/docs/", nullptr, nullptr, SW_SHOW);
+	if (ImGui::MenuItem("New User Setup"))
+		ShellExecuteA(nullptr, "open", "https://www.redguides.com/community/threads/redguides-nfo.95805/", nullptr, nullptr, SW_SHOW);
+	if (ImGui::MenuItem("Discord"))
+		ShellExecuteA(nullptr, "open", "https://chat.redguides.com", nullptr, nullptr, SW_SHOW);
+
+	ImGui::Separator();
+
+	if (ImGui::BeginMenu("KissAssist"))
+	{
+		if (ImGui::MenuItem("Kiss Docs"))
+			ShellExecuteA(nullptr, "open", "https://www.redguides.com/docs/projects/kissassist/", nullptr, nullptr, SW_SHOW);
+		if (ImGui::MenuItem("Kiss Ini Library"))
+			ShellExecuteA(nullptr, "open", "https://www.redguides.com/community/resources/categories/kissassist-ini-library.18/", nullptr, nullptr, SW_SHOW);
+		if (ImGui::MenuItem("Kiss Support"))
+			ShellExecuteA(nullptr, "open", "https://www.redguides.com/community/forums/kissassist-support.125/", nullptr, nullptr, SW_SHOW);
+
+		ImGui::EndMenu();
+	}
+
+	if (ImGui::BeginMenu("CWTN Class Plugins"))
+	{
+		if (ImGui::MenuItem("CWTN Info"))
+			ShellExecuteA(nullptr, "open", "https://www.redguides.com/community/threads/getting-started-with-cwtn-plugins-movement-ui-window-clickies-pulling-etc-check-here-first.76746/", nullptr, nullptr, SW_SHOW);
+		if (ImGui::MenuItem("CWTN Forums"))
+			ShellExecuteA(nullptr, "open", "https://www.redguides.com/community/forums/cwtn-plugins.163/", nullptr, nullptr, SW_SHOW);
+
+		ImGui::EndMenu();
+	}
+
+	if (ImGui::MenuItem("RGMercs Forum"))
+		ShellExecuteA(nullptr, "open", "https://www.redguides.com/community/forums/rgmercs-lua.196/", nullptr, nullptr, SW_SHOW);
 }
 
-struct RedfetchCheckResult
+struct RedfetchUpdateItem
 {
-	DWORD exitCode = 1;
-	int updateCount = 0;
+	std::string resourceId;
+	std::string name;
+	int64_t availableVersionId = 0;
 };
 
-static std::future<RedfetchCheckResult> s_redfetchCheckFuture;
-
-static RedfetchCheckResult RunRedfetchCheck(std::string redfetchPath)
+struct RedfetchStatus
 {
-	RedfetchCheckResult result;
+	int schemaVersion = 0;
+	std::string env;
+	std::string authState;
+	std::string managedPath; // MQ path redfetch manages for this env; empty if unresolved
+	std::optional<std::chrono::system_clock::time_point> checkedAt;
+	std::vector<RedfetchUpdateItem> items;
+};
 
-	SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
-	wil::unique_handle hReadPipe;
-	wil::unique_handle hWritePipe;
-	if (!CreatePipe(hReadPipe.addressof(), hWritePipe.addressof(), &sa, 0))
-		return result;
+// Reads status file from redfetch
+static std::optional<RedfetchStatus> ReadRedfetchUpdateStatus()
+{
+	const fs::path localAppData = GetLocalAppDataPath();
+	if (localAppData.empty())
+		return std::nullopt;
 
-	wil::unique_hfile hNullStderr(CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-		&sa, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
-	if (!hNullStderr)
-		return result;
+	const fs::path statusPath = localAppData / "RedGuides" / "redfetch" / "update_status.json";
 
-	SetHandleInformation(hReadPipe.get(), HANDLE_FLAG_INHERIT, 0);
+	std::error_code ec;
+	if (!fs::exists(statusPath, ec))
+		return std::nullopt;
 
-	STARTUPINFOA si = { sizeof(STARTUPINFOA) };
-	si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
-	si.hStdOutput = hWritePipe.get();
-	si.hStdError = hNullStderr.get();
-	si.hStdInput = nullptr;
-	si.wShowWindow = SW_HIDE;
+	std::ifstream file(statusPath);
+	if (!file.is_open())
+		return std::nullopt;
 
-	wil::unique_process_information pi;
-
-	int callerResourceId = 1974;
-	if (ServerType == "test") callerResourceId = 2218;
-	else if (ServerType == "emu") callerResourceId = 60;
-
-	std::string cmdLine = fmt::format("\"{}\" check --caller-resource-id {}", redfetchPath, callerResourceId);
-	if (ServerType == "live" || ServerType == "test" || ServerType == "emu")
-		cmdLine += fmt::format(" --server {}", mq::to_upper_copy(ServerType));
-
-	if (!CreateProcessA(nullptr, cmdLine.data(), nullptr, nullptr, TRUE,
-		CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+	try
 	{
-		return result;
+		const nlohmann::json doc = nlohmann::json::parse(file);
+
+		RedfetchStatus status;
+
+		const auto schemaVersion = doc.find("schema_version");
+		if (schemaVersion != doc.end() && schemaVersion->is_number_integer())
+			status.schemaVersion = schemaVersion->get<int>();
+
+		const auto env = doc.find("env");
+		if (env != doc.end() && env->is_string())
+			status.env = env->get<std::string>();
+
+		const auto authState = doc.find("auth_state");
+		if (authState != doc.end() && authState->is_string())
+			status.authState = authState->get<std::string>();
+
+		const auto managed = doc.find("managed_path");
+		if (managed != doc.end() && managed->is_string())
+			status.managedPath = managed->get<std::string>();
+
+		const auto checkedAt = doc.find("checked_at");
+		if (checkedAt != doc.end() && checkedAt->is_number_integer())
+		{
+			const int64_t checkedAtEpoch = checkedAt->get<int64_t>();
+			if (checkedAtEpoch > 0)
+				status.checkedAt = std::chrono::system_clock::from_time_t(static_cast<time_t>(checkedAtEpoch));
+		}
+
+		const auto updates = doc.find("updates");
+		if (updates != doc.end() && updates->is_object())
+		{
+			const auto items = updates->find("items");
+			if (items != updates->end() && items->is_array())
+			{
+				for (const auto& item : *items)
+				{
+					if (!item.is_object())
+						continue;
+
+					RedfetchUpdateItem entry;
+
+					const auto resourceId = item.find("resource_id");
+					if (resourceId != item.end() && resourceId->is_string())
+						entry.resourceId = resourceId->get<std::string>();
+
+					const auto name = item.find("name");
+					if (name != item.end() && name->is_string())
+						entry.name = name->get<std::string>();
+
+					const auto availableVersionId = item.find("available_version_id");
+					if (availableVersionId != item.end() && availableVersionId->is_number_integer())
+						entry.availableVersionId = availableVersionId->get<int64_t>();
+
+					status.items.push_back(std::move(entry));
+				}
+			}
+		}
+
+		return status;
+	}
+	catch (const nlohmann::json::exception& ex)
+	{
+		SPDLOG_DEBUG("Failed to parse redfetch update status {}: {}", statusPath.string(), ex.what());
+		return std::nullopt;
+	}
+}
+
+// Using a json instead of macroquest.ini as it's not user configurable
+static fs::path RedfetchCheckStatePath()
+{
+	return fs::path(internal_paths::Config) / "redfetch_check_state.json";
+}
+
+static nlohmann::json ReadRedfetchCheckState()
+{
+	const fs::path statePath = RedfetchCheckStatePath();
+
+	std::error_code ec;
+	if (!fs::exists(statePath, ec))
+		return nlohmann::json::object();
+
+	std::ifstream file(statePath);
+	if (!file.is_open())
+		return nlohmann::json::object();
+
+	try
+	{
+		nlohmann::json doc = nlohmann::json::parse(file);
+		if (doc.is_object())
+			return doc;
+	}
+	catch (const nlohmann::json::exception& ex)
+	{
+		SPDLOG_DEBUG("Failed to parse redfetch check state {}: {}", statePath.string(), ex.what());
 	}
 
-	hWritePipe.reset();
+	return nlohmann::json::object();
+}
 
-	DWORD waitResult = WaitForSingleObject(pi.hProcess, 30000);
-	if (waitResult == WAIT_TIMEOUT)
+static void WriteRedfetchCheckState(const nlohmann::json& doc)
+{
+	const fs::path statePath = RedfetchCheckStatePath();
+
+	try
 	{
-		TerminateProcess(pi.hProcess, 1);
-		return result;
+		std::ofstream file(statePath, std::ios::binary | std::ios::trunc);
+		if (!file.is_open())
+		{
+			SPDLOG_DEBUG("Failed to open redfetch check state {} for write", statePath.string());
+			return;
+		}
+		file << doc.dump(2);
+	}
+	catch (const std::exception& ex)
+	{
+		SPDLOG_DEBUG("Failed to write redfetch check state: {}", ex.what());
+	}
+}
+
+static std::optional<std::chrono::system_clock::time_point> GetRedfetchLastSpawn(
+	const nlohmann::json& state, const std::string& env)
+{
+	const auto envs = state.find("envs");
+	if (envs == state.end() || !envs->is_object())
+		return std::nullopt;
+
+	const auto entry = envs->find(env);
+	if (entry == envs->end() || !entry->is_object())
+		return std::nullopt;
+
+	const auto lastSpawn = entry->find("last_spawn");
+	if (lastSpawn == entry->end() || !lastSpawn->is_number_integer())
+		return std::nullopt;
+
+	const int64_t epoch = lastSpawn->get<int64_t>();
+	if (epoch <= 0)
+		return std::nullopt;
+
+	return std::chrono::system_clock::from_time_t(static_cast<time_t>(epoch));
+}
+
+static std::set<std::string> GetRedfetchNotified(const nlohmann::json& state, const std::string& env)
+{
+	std::set<std::string> keys;
+
+	const auto envs = state.find("envs");
+	if (envs == state.end() || !envs->is_object())
+		return keys;
+
+	const auto entry = envs->find(env);
+	if (entry == envs->end() || !entry->is_object())
+		return keys;
+
+	const auto notified = entry->find("notified");
+	if (notified == entry->end() || !notified->is_array())
+		return keys;
+
+	for (const auto& key : *notified)
+	{
+		if (key.is_string())
+			keys.insert(key.get<std::string>());
 	}
 
-	char buffer[64] = { 0 };
-	DWORD bytesRead = 0;
-	ReadFile(hReadPipe.get(), buffer, sizeof(buffer) - 1, &bytesRead, nullptr);
-
-	GetExitCodeProcess(pi.hProcess, &result.exitCode);
-
-	// Older redfetch without "check" returns exit code 2 without an update count.
-	if (result.exitCode == 2 && bytesRead == 0)
-	{
-		SPDLOG_DEBUG("redfetch check returned exit code 2 without stdout, ignoring result");
-		result.exitCode = 1;
-		return result;
-	}
-
-	if (result.exitCode == 0 && bytesRead > 0)
-		result.updateCount = atoi(buffer);
-
-	return result;
+	return keys;
 }
 
 class RedfetchNotificationHandler : public IWinToastHandler
 {
 public:
-	enum class Action { Update, Interactive };
+	enum class Action { None, Update, Interactive };
 
 	RedfetchNotificationHandler(Action action) : m_action(action)
 	{
 	}
 
+	// Only the action button acts; a body click shouldn't start an update.
 	void toastActivated() override
 	{
-		LaunchRedfetch(m_action == Action::Update);
 	}
 
 	void toastActivated(int actionIndex) override
 	{
+		if (actionIndex != 0)
+			return;
+
+		switch (m_action)
+		{
+		case Action::Update:
+			LaunchRedfetch(true);
+			break;
+		case Action::Interactive:
+			LaunchRedfetch(false);
+			break;
+		default:
+			break;
+		}
 	}
 
 	void toastActivated(const char* response) override
@@ -1575,58 +1771,145 @@ private:
 	Action m_action;
 };
 
-static void StartRedfetchCheck()
+static fs::path NormalizeRedfetchPath(const fs::path& path)
 {
-	if (mq::GetPrivateProfileBool("MacroQuest", "DisableRedfetchCheck", false, internal_paths::MQini))
-		return;
+	std::error_code ec;
+	const fs::path canonical = fs::weakly_canonical(path, ec);
+	if (ec || canonical.empty())
+		return path.lexically_normal();
 
-	std::string redfetchPath = ResolveRedfetchCommand();
-	if (redfetchPath.empty())
-		return;
-
-	s_redfetchCheckFuture = std::async(std::launch::async, RunRedfetchCheck, std::move(redfetchPath));
+	return canonical;
 }
 
-static void PollRedfetchCheck()
+static bool RedfetchManagesThisInstall(const std::string& managedPath)
 {
-	if (!s_redfetchCheckFuture.valid())
-		return;
+	if (managedPath.empty())
+		return true;
 
-	if (s_redfetchCheckFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
-		return;
+	const fs::path managed = NormalizeRedfetchPath(fs::path(mq::utf8_to_wstring(managedPath)));
+	const fs::path mine = NormalizeRedfetchPath(fs::path(internal_paths::MQRoot));
 
-	RedfetchCheckResult result = s_redfetchCheckFuture.get();
+	// Windows paths are case-insensitive.
+	return mq::ci_equals(managed.wstring(), mine.wstring());
+}
+
+static bool ConfirmRedfetchUpdateTarget()
+{
+	const std::string env = GetRedfetchEnv();
+	if (env.empty())
+		return true;
+
+	const std::optional<RedfetchStatus> status = ReadRedfetchUpdateStatus();
+	if (!status || !mq::ci_equals(status->env, env)
+		|| RedfetchManagesThisInstall(status->managedPath))
+		return true;
+
+	// Match MQRoot's ACP encoding for the narrow MessageBox (managedPath is UTF-8 from JSON).
+	const std::string managedDisplay = fs::path(mq::utf8_to_wstring(status->managedPath)).string();
+
+	const std::string message = fmt::format(
+		"redfetch manages a different MacroQuest for {}.\n\n"
+		"Launched from:\n{}\n\nWill update:\n{}\n\nUpdate anyway?",
+		env, internal_paths::MQRoot, managedDisplay);
+
+	return MessageBox(nullptr, message.c_str(), "redfetch",
+		MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+}
+
+// Toasts only when something new appears
+static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::string& env)
+{
+	if (status.schemaVersion != 1)
+	{
+		SPDLOG_DEBUG("redfetch update status has unsupported schema_version {}", status.schemaVersion);
+		return;
+	}
+
+	if (!mq::ci_equals(status.env, env))
+	{
+		SPDLOG_DEBUG("redfetch update status env '{}' does not match requested env '{}'", status.env, env);
+		return;
+	}
+
+	if (!RedfetchManagesThisInstall(status.managedPath))
+	{
+		SPDLOG_DEBUG("redfetch manages '{}', not this install '{}'", status.managedPath, internal_paths::MQRoot);
+		return;
+	}
 
 	if (!WinToast::instance()->isInitialized())
 		return;
 
+	nlohmann::json state = ReadRedfetchCheckState();
+
+	std::set<std::string> currentKeys;
+	RedfetchNotificationHandler::Action action = RedfetchNotificationHandler::Action::None;
 	std::string firstLine;
 	std::string secondLine;
-	RedfetchNotificationHandler::Action action = RedfetchNotificationHandler::Action::Interactive;
+	std::string actionLabel;
 
-	switch (result.exitCode)
+	if (status.authState == "ok")
 	{
-	case 0:
-		if (result.updateCount <= 0)
+		if (status.items.empty())
+		{
+			// Nothing outdated; clear the stored set so a future update re-alerts.
+			state["envs"][env]["notified"] = nlohmann::json::array();
+			WriteRedfetchCheckState(state);
 			return;
-		firstLine = "Script updates available";
-		secondLine = fmt::format("{} update{} available.", result.updateCount, result.updateCount == 1 ? "" : "s");
+		}
+
+		for (const RedfetchUpdateItem& item : status.items)
+			currentKeys.insert(fmt::format("{}:{}", item.resourceId, item.availableVersionId));
+
 		action = RedfetchNotificationHandler::Action::Update;
-		break;
-	case 2:
-		firstLine = "Your Very Vanilla MQ is out of date";
-		secondLine = "A new version of Very Vanilla MQ is available.";
-		action = RedfetchNotificationHandler::Action::Update;
-		break;
-	case 3:
-		firstLine = "redfetch needs attention";
-		secondLine = "redfetch needs you to log in.";
-		break;
-	case 4:
+		actionLabel = "Update now";
+
+		const size_t count = status.items.size();
+		firstLine = fmt::format("{} update{} available", count, count == 1 ? "" : "s");
+
+		// A few names plus "+N more" keeps the toast short.
+		constexpr size_t maxNames = 2;
+		const size_t shownNames = (std::min)(maxNames, count);
+		for (size_t i = 0; i < shownNames; ++i)
+		{
+			if (!secondLine.empty())
+				secondLine += ", ";
+			secondLine += status.items[i].name;
+		}
+		if (count > shownNames)
+			secondLine += fmt::format(", +{} more", count - shownNames);
+	}
+	else if (status.authState == "needs_login")
+	{
+		currentKeys.insert("auth:needs_login");
+		action = RedfetchNotificationHandler::Action::Interactive;
+		actionLabel = "Open redfetch";
+		firstLine = "Log in to redfetch";
+		secondLine = "Log in to redfetch so it can check for updates.";
+	}
+	else if (status.authState == "not_configured")
+	{
+		currentKeys.insert("auth:not_configured");
+		action = RedfetchNotificationHandler::Action::Interactive;
+		actionLabel = "Open redfetch";
 		firstLine = "Set up redfetch";
 		secondLine = "Configure redfetch to check for updates.";
-		break;
-	default:
+	}
+	else
+	{
+		SPDLOG_DEBUG("redfetch update status has unknown auth_state '{}'", status.authState);
+		return;
+	}
+
+	const std::set<std::string> storedKeys = GetRedfetchNotified(state, env);
+
+	const bool hasNew = std::any_of(currentKeys.begin(), currentKeys.end(),
+		[&storedKeys](const std::string& key) { return storedKeys.find(key) == storedKeys.end(); });
+
+	if (!hasNew)
+	{
+		state["envs"][env]["notified"] = currentKeys;
+		WriteRedfetchCheckState(state);
 		return;
 	}
 
@@ -1635,8 +1918,150 @@ static void PollRedfetchCheck()
 	WinToastTemplate templ(WinToastTemplate::Text02);
 	templ.setFirstLine(firstLine);
 	templ.setSecondLine(secondLine);
+	templ.addAction(actionLabel);
 
-	WinToast::instance()->showToast(templ, handler);
+	// Record the notification only once it displays
+	if (WinToast::instance()->showToast(templ, handler) < 0)
+		return;
+
+	state["envs"][env]["notified"] = currentKeys;
+	WriteRedfetchCheckState(state);
+}
+
+struct RedfetchCheckResult
+{
+	std::string env;
+	std::chrono::system_clock::time_point spawnStart;
+	std::optional<RedfetchStatus> status;
+};
+
+// Runs on a detached worker thread, results via WM_USER_REDFETCH_CHECK.
+static void RunRedfetchCheck(fs::path redfetchPath, std::string env,
+	std::chrono::system_clock::time_point spawnStart)
+{
+	auto result = std::make_unique<RedfetchCheckResult>();
+	result->env = std::move(env);
+	result->spawnStart = spawnStart;
+
+	// MQ passes only --server; redfetch owns which targets are outdated.
+	std::wstring cmdLine = L"\"" + redfetchPath.wstring() + L"\" check --server " + mq::utf8_to_wstring(result->env);
+
+	STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+	si.dwFlags = STARTF_USESHOWWINDOW;
+	si.wShowWindow = SW_HIDE;
+
+	wil::unique_process_information pi;
+	if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+		CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+	{
+		SPDLOG_WARN("Failed to spawn redfetch check: error {}", ::GetLastError());
+	}
+	else
+	{
+		constexpr DWORD checkTimeoutMs = 30000;
+		const DWORD waitResult = WaitForSingleObject(pi.hProcess, checkTimeoutMs);
+		if (waitResult == WAIT_OBJECT_0)
+		{
+			DWORD exitCode = 1;
+			GetExitCodeProcess(pi.hProcess, &exitCode);
+
+			// exit 1 = couldn't determine status; the prior file is left untouched.
+			if (exitCode == 0)
+				result->status = ReadRedfetchUpdateStatus();
+			else
+				SPDLOG_DEBUG("redfetch check exited with code {}; no fresh status this cycle", exitCode);
+		}
+		else if (waitResult == WAIT_TIMEOUT)
+		{
+			SPDLOG_WARN("redfetch check timed out after 30s; terminating");
+			TerminateProcess(pi.hProcess, 1);
+		}
+		else
+		{
+			SPDLOG_WARN("redfetch check wait failed: error {}", ::GetLastError());
+		}
+	}
+
+	// Hand off to the main thread
+	if (PostMessageA(hMainWnd, WM_USER_REDFETCH_CHECK, reinterpret_cast<WPARAM>(result.get()), 0))
+		result.release();
+	else
+		SPDLOG_DEBUG("Failed to post redfetch check result; dropping");
+}
+
+// Launch-only: reuse a recent cached update status or spawn redfetch
+static void StartRedfetchCheck()
+{
+	if (mq::GetPrivateProfileBool("MacroQuest", "DisableRedfetchCheck", false, internal_paths::MQini))
+		return;
+
+	const std::string env = GetRedfetchEnv();
+	if (env.empty())
+	{
+		SPDLOG_DEBUG("redfetch check skipped: no redfetch environment for build type '{}'", ServerType);
+		return;
+	}
+
+	const fs::path redfetchPath = ResolveRedfetchCommand();
+	if (redfetchPath.empty())
+		return; // feature inactive without redfetch
+
+	constexpr int defaultIntervalMinutes = 30;
+	const int intervalMinutes = mq::GetPrivateProfileInt("MacroQuest", "RedfetchCheckIntervalMinutes", defaultIntervalMinutes, internal_paths::MQini);
+	const auto interval = std::chrono::minutes((std::max)(intervalMinutes, 0));
+	const auto now = std::chrono::system_clock::now();
+
+	// Fresh cached status
+	const std::optional<RedfetchStatus> cached = ReadRedfetchUpdateStatus();
+	if (cached && cached->checkedAt && mq::ci_equals(cached->env, env)
+		&& now - *cached->checkedAt < interval)
+	{
+		SPDLOG_DEBUG("Using cached redfetch update status (checked within interval)");
+		ProcessRedfetchStatus(*cached, env);
+		return;
+	}
+
+	if (cached && mq::ci_equals(cached->env, env)
+		&& !RedfetchManagesThisInstall(cached->managedPath))
+	{
+		SPDLOG_DEBUG("redfetch manages '{}', not this install '{}'", cached->managedPath, internal_paths::MQRoot);
+		return;
+	}
+
+	nlohmann::json state = ReadRedfetchCheckState();
+	const std::optional<std::chrono::system_clock::time_point> lastSpawn = GetRedfetchLastSpawn(state, env);
+	if (lastSpawn)
+	{
+		if (now - *lastSpawn < interval)
+		{
+			SPDLOG_DEBUG("redfetch check spawn rate-limited (last attempt within interval)");
+			return;
+		}
+	}
+
+	state["envs"][env]["last_spawn"] = static_cast<int64_t>(std::chrono::system_clock::to_time_t(now));
+	WriteRedfetchCheckState(state);
+
+	SPDLOG_DEBUG("Spawning redfetch check for env {}", env);
+	std::thread(RunRedfetchCheck, redfetchPath, env, now).detach();
+}
+
+static void HandleRedfetchCheckResult(uintptr_t resultPtr)
+{
+	const std::unique_ptr<RedfetchCheckResult> result(reinterpret_cast<RedfetchCheckResult*>(resultPtr));
+	if (!result || !result->status)
+		return; // spawn failed, timed out, or wrote nothing fresh
+
+	// Require checked_at to advance
+	constexpr auto freshnessGrace = std::chrono::seconds(2);
+	if (!result->status->checkedAt
+		|| *result->status->checkedAt < result->spawnStart - freshnessGrace)
+	{
+		SPDLOG_DEBUG("redfetch update status did not advance past spawn start; treating as no fresh data");
+		return;
+	}
+
+	ProcessRedfetchStatus(*result->status, result->env);
 }
 
 #pragma endregion
@@ -2373,7 +2798,6 @@ int WINAPI CALLBACK WinMain(
 		{
 			ProcessPendingLogins();
 			CheckPruneLogging();
-			PollRedfetchCheck();
 
 			if (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE) != 0)
 			{
