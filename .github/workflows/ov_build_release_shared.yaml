@@ -572,36 +572,49 @@ jobs:
         shell: pwsh
         run: echo "MQVERSION_INFO=$((Get-Item build/bin/release/MQ2Main.dll).VersionInfo.FileVersion)" >> $env:GITHUB_ENV
 
-      - name: "[Release] Restore Last Changelog"
-        uses: actions/cache@v5
-        with:
-          path: ${{ github.workspace }}/build/changelog/CHANGELOG.md
-          key: changelog-${{ env.platform }}-${{ inputs.client_target }}-${{ github.run_id }}
-          restore-keys: |
-            changelog-${{ env.platform }}-${{ inputs.client_target }}
+      # Previous release CHANGELOG.md is our durable snapshot, must run before the release is deleted.
+      - name: "[Release] Fetch changelog from previous release"
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $dir = "${{ github.workspace }}/build/changelog"
+          New-Item -Path $dir -ItemType Directory -Force | Out-Null
+          gh release download ${{ github.ref_name }} --pattern CHANGELOG.md --dir $dir
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "No CHANGELOG.md asset on the previous '${{ github.ref_name }}' release; this run will use the default release notes."
+          }
+          exit 0
 
       - name: "[Release] Diff Changelog"
         id: diff_changelog
         shell: pwsh
         run: |
           $ReleaseDescription = "Automated release for ${{ inputs.client_target }}"
-          if (Test-Path "${{ github.workspace }}/build/changelog/CHANGELOG.md")
-          {
-            $FileDiff = (Compare-Object (Get-Content "${{ github.workspace }}/data/resources/CHANGELOG.md") (Get-Content "${{ github.workspace }}/build/changelog/CHANGELOG.md"))
-            if ($FileDiff.Count -gt 0)
-            {
-                if ($FileDiff[0].SideIndicator -eq '<=')
-                {
-                    $ReleaseDescription = "Change Log:`r`n-----------`r`n"
-                    $ReleaseDescription += $FileDiff.InputObject -join "`r`n`r`n"
-                }
+          $newPath = "${{ github.workspace }}/data/resources/CHANGELOG.md"
+          $oldPath = "${{ github.workspace }}/build/changelog/CHANGELOG.md"
+
+          if (Test-Path $oldPath) {
+            # The changelog is prepend-only, organized under '## <date>' headings.
+            # New content is everything above the first heading that already
+            # existed in the previously released copy, kept verbatim.
+            $oldHeadings = New-Object System.Collections.Generic.HashSet[string]
+            Get-Content $oldPath | Where-Object { $_ -match '^##\s' } | ForEach-Object { [void]$oldHeadings.Add($_.Trim()) }
+
+            $newLines = [System.Collections.Generic.List[string]]::new()
+            foreach ($line in (Get-Content $newPath)) {
+              if ($line -match '^##\s' -and $oldHeadings.Contains($line.Trim())) { break }
+              $newLines.Add($line)
+            }
+            $newContent = ($newLines -join "`r`n").Trim()
+            if ($newContent) {
+              $ReleaseDescription = $newContent
+              Write-Host "Found new changelog content:`n$newContent"
+            } else {
+              Write-Host "Changelog unchanged since last release; using default release notes."
             }
           }
-          else
-          {
-            New-Item -Path "${{ github.workspace }}/build/changelog" -ItemType Directory -ErrorAction SilentlyContinue
-          }
-          Copy-Item -Path "${{ github.workspace }}/data/resources/CHANGELOG.md" -Destination "${{ github.workspace }}/build/changelog/CHANGELOG.md" -Force
+
           Remove-Item -Force "${{ github.workspace }}/build/ReleaseNotes.md" -ErrorAction SilentlyContinue
           $ReleaseDescription | Out-File "${{ github.workspace }}/build/ReleaseNotes.md"
 
@@ -621,7 +634,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.ref_name }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" ${{ env.gh_release_flag }} build/bin/MacroQuest.zip
+          # CHANGELOG.md rides along as an asset so the next run can diff against it.
+          gh release create ${{ github.ref_name }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" ${{ env.gh_release_flag }} build/bin/MacroQuest.zip data/resources/CHANGELOG.md
 
       - name: "[Release] Publish to RedGuides"
         if: env.vv_enabled == 'true'
