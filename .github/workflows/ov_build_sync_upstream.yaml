@@ -1,9 +1,26 @@
-# Syncs upstream macroquest/macroquest into master, then tags vv-emu-rof2.
-# Uses a persistent clone so git rerere accumulates between runs.
-name: OV Sync upstream (MacroQuest rel-emu-rof2)
+#
+# Per target:
+#   live / test  -> merge upstream macroquest, bump src/eqlib
+#                   to redguides/eqlib <target> head, push, tag vv-<target>.
+#   emu-rof2     -> sync redguides/eqlib from upstream mq, merge upstream
+#                   rel-emu-rof2, bump src/eqlib to redguides/eqlib emu-rof2
+#                   head, push, tag vv-emu-rof2.
+#
+# On merge conflicts other than the src/eqlib gitlink, resolve on the runner:
+# commit, push, then re-run this workflow to finish the pointer bump/tag.
+name: OV Sync & Tag With Upstream
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Client target to update
+        required: true
+        type: choice
+        options:
+          - emu-rof2
+          - live
+          - test
   repository_dispatch:
     types: [sync-upstream-emu-rof2]
 
@@ -18,52 +35,157 @@ jobs:
     env:
       REPO_DIR: C:\actions-runner\repos\openvanilla
       RG_SYNC_PAT: ${{ secrets.RG_SYNC_PAT }}
+      TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'emu-rof2' }}
     steps:
-      - name: Merge macroquest tag rel-emu-rof2
-        shell: pwsh
-        env:
-          UPSTREAM_TAG: rel-emu-rof2
-        run: |
-          $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
-
-          if (-not (Test-Path $env:REPO_DIR)) {
-            git clone $auth $env:REPO_DIR
-          }
-          Set-Location $env:REPO_DIR
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git merge --abort 2>$null
-          git reset --hard HEAD
-          git clean -ffdx
-          git checkout master
-          git pull origin master
-
-          git remote add upstream https://github.com/macroquest/macroquest.git 2>$null
-          git fetch upstream --tags --force
-          git merge $env:UPSTREAM_TAG --no-edit
-
-          git diff --quiet HEAD $env:UPSTREAM_TAG -- src/eqlib
-          if ($LASTEXITCODE -ne 0) {
-            git checkout $env:UPSTREAM_TAG -- src/eqlib
-            git commit --amend --no-edit
-          }
-
-          git push $auth master
-
-      - name: Trigger eqlib sync
+      - name: Sync redguides/eqlib from upstream (emu only, and wait)
+        if: startsWith(env.TARGET, 'emu')
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RG_SYNC_PAT }}
-        run: gh api repos/redguides/eqlib/dispatches -f event_type=sync-upstream
+        run: |
+          $before = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-      - name: Force-update vv-emu-rof2 tag
+          gh workflow run sync_upstream.yaml --repo redguides/eqlib --ref live
+          if ($LASTEXITCODE -ne 0) { throw "Failed to dispatch eqlib sync workflow" }
+
+          $runId = $null
+          for ($i = 0; $i -lt 12 -and -not $runId; $i++) {
+            Start-Sleep -Seconds 5
+            $runId = gh run list --repo redguides/eqlib --workflow sync_upstream.yaml `
+              --created ">=$before" --limit 1 --json databaseId --jq '.[0].databaseId'
+          }
+          if (-not $runId) { throw "eqlib sync run never appeared on redguides/eqlib" }
+
+          gh run watch $runId --repo redguides/eqlib --exit-status
+          if ($LASTEXITCODE -ne 0) { throw "eqlib sync failed (run $runId). Not merging MQ until eqlib is current." }
+
+      - name: Prepare working copy
+        shell: pwsh
+        run: |
+          function Invoke-Git {
+            git @args
+            if ($LASTEXITCODE -ne 0) { throw "git $args failed (exit $LASTEXITCODE)" }
+          }
+
+          $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
+
+          if (-not (Test-Path $env:REPO_DIR)) {
+            Invoke-Git clone $auth $env:REPO_DIR
+          }
+          Set-Location $env:REPO_DIR
+
+          Invoke-Git config user.name "github-actions[bot]"
+          Invoke-Git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Don't clobber a manual merge someone is resolving on the runner.
+          if (Test-Path .git/MERGE_HEAD) {
+            throw "A merge is already in progress in $env:REPO_DIR. Resolve and push it (or 'git merge --abort'), then re-run."
+          }
+
+          Invoke-Git checkout master
+          Invoke-Git fetch origin
+          Invoke-Git reset --hard origin/master
+          Invoke-Git clean -ffdx
+
+          # The eqlib submodule must exist locally with current commits.
+          Invoke-Git submodule update --init src/eqlib
+          Invoke-Git -C src/eqlib fetch origin
+
+      - name: Merge macroquest upstream
+        shell: pwsh
+        run: |
+          function Invoke-Git {
+            git @args
+            if ($LASTEXITCODE -ne 0) { throw "git $args failed (exit $LASTEXITCODE)" }
+          }
+
+          $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
+          # emu targets track a release tag; live/test track upstream master.
+          $mergeRef = if ($env:TARGET -like 'emu*') { "rel-$env:TARGET" } else { 'upstream/master' }
+          Set-Location $env:REPO_DIR
+
+          git remote add upstream https://github.com/macroquest/macroquest.git 2>$null
+          Invoke-Git fetch upstream --tags --force
+
+          Write-Host "Merging $mergeRef into master..."
+          git merge $mergeRef --no-edit
+          if ($LASTEXITCODE -ne 0) {
+            if (-not (Test-Path .git/MERGE_HEAD)) {
+              throw "git merge failed before starting (not a conflict). Check the log above."
+            }
+
+            $unmerged = @(git diff --name-only --diff-filter=U)
+
+            if ($unmerged -contains 'src/eqlib') {
+              # Expected gitlink conflict: resolve straight to our fork's
+              # <target> branch head.
+              $want = (git -C src/eqlib rev-parse "origin/$env:TARGET").Trim()
+              if ($LASTEXITCODE -ne 0) { throw "eqlib branch '$env:TARGET' not found in redguides/eqlib" }
+              Invoke-Git -C src/eqlib checkout $want
+              Invoke-Git add src/eqlib
+              $unmerged = @(git diff --name-only --diff-filter=U)
+            }
+
+            if ($unmerged.Count -gt 0) {
+              Write-Host "::error::Merge conflicts require manual resolution on the runner ($env:REPO_DIR):"
+              $unmerged | ForEach-Object { Write-Host "::error::  $_" }
+              Write-Host "Resolve them there (rerere will record it), 'git commit', 'git push origin master', then re-run this workflow."
+              exit 1
+            }
+
+            # Everything resolved (eqlib and/or rerere replays) -- finish the merge.
+            Invoke-Git commit --no-edit
+          }
+
+          Invoke-Git push $auth master
+
+      - name: Update eqlib pointer for target
+        shell: pwsh
+        run: |
+          function Invoke-Git {
+            git @args
+            if ($LASTEXITCODE -ne 0) { throw "git $args failed (exit $LASTEXITCODE)" }
+          }
+
+          $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
+          Set-Location $env:REPO_DIR
+
+          Invoke-Git -C src/eqlib fetch origin
+          $want = (git -C src/eqlib rev-parse "origin/$env:TARGET").Trim()
+          if ($LASTEXITCODE -ne 0) { throw "eqlib branch '$env:TARGET' not found in redguides/eqlib" }
+          $have = (git rev-parse "HEAD:src/eqlib").Trim()
+
+          if ($want -eq $have) {
+            Write-Host "src/eqlib already points at $env:TARGET head ($want)."
+            exit 0
+          }
+
+          Invoke-Git -C src/eqlib checkout $want
+          Invoke-Git add src/eqlib
+          Invoke-Git commit -m "eqlib for $env:TARGET"
+          Invoke-Git push $auth master
+          Write-Host "Bumped src/eqlib $have -> $want ($env:TARGET head)."
+
+      - name: Force-update vv-<target> tag
         shell: pwsh
         run: |
           Set-Location $env:REPO_DIR
-          git checkout master
-          git pull origin master
           $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
-          git tag -f vv-emu-rof2
-          git push $auth refs/tags/vv-emu-rof2 --force
+          $tag = "vv-$env:TARGET"
+
+          $masterSha = (git rev-parse master).Trim()
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          $remoteTagSha = ((git ls-remote $auth "refs/tags/$tag") -split "\s+")[0]
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          if ($remoteTagSha -eq $masterSha) {
+            Write-Host "$tag already points at $masterSha; skipping tag push (no release trigger)."
+            exit 0
+          }
+
+          git tag -f $tag master
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          git push $auth "refs/tags/$tag" --force
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Host "Pushed $tag at $masterSha -- release build will trigger."

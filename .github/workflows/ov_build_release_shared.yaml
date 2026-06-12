@@ -95,6 +95,27 @@ jobs:
       - name: "[Source] Update builtin submodules"
         run: git submodule update --init --recursive --depth=1
 
+      - name: "[Source] Verify eqlib matches client target"
+        shell: pwsh
+        run: |
+          $branch = '${{ inputs.client_target }}' -replace '^beta-', ''
+
+          # merge-base needs real history; the submodule may be shallow.
+          if ((git -C src/eqlib rev-parse --is-shallow-repository).Trim() -eq 'true') {
+            git -C src/eqlib fetch --unshallow origin
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          git -C src/eqlib fetch origin $branch
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          git -C src/eqlib merge-base --is-ancestor HEAD "origin/$branch"
+          if ($LASTEXITCODE -ne 0) {
+            $head = git -C src/eqlib rev-parse --short HEAD
+            echo "::error::Pinned eqlib commit $head is not on eqlib branch '$branch' (client target '${{ inputs.client_target }}'). Update the src/eqlib submodule pointer before tagging this release."
+            exit 1
+          }
+          Write-Host "eqlib pointer is on branch '$branch' -- OK."
+
       - name: "[Source] Select MacroQuest_default.ini for release profile"
         shell: pwsh
         run: |
