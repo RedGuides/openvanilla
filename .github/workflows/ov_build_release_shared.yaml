@@ -77,11 +77,6 @@ jobs:
           echo "::error:: Target '${{ inputs.client_target }}' has no version_rev defined. Update the version revision map in the env block."
           exit 1
 
-      - name: "[Setup] Install and cache PowerShell modules"
-        uses: potatoqualitee/psmodulecache@v6.2.1
-        with:
-          modules-to-cache: powershell-yaml
-
       - name: "[Source] Checkout code"
         uses: actions/checkout@v6
 
