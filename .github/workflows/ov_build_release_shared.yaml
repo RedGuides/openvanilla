@@ -477,7 +477,6 @@ jobs:
         if: env.vv_enabled == 'true'
         shell: pwsh
         run: |
-          python -m pip install --quiet --disable-pip-version-check pyyaml
           python tools/build_scripts/build_luarocks_tree.py --mq-path build/bin/Release --arch ${{ env.platform == 'Win32' && 'x86' || 'x64' }}
 
       - name: "[Package] Sign Code"
