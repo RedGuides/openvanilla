@@ -8,3 +8,7 @@
 [submodule "data/lua/IntegrationTests"]
 	path = src/plugins/lua/lua/IntegrationTests
 	url = https://github.com/macroquest/integration-tests.git
+[submodule "contrib/luarocks"]
+	path = contrib/luarocks
+	url = https://github.com/macroquest/luarocks.git
+	shallow = true
