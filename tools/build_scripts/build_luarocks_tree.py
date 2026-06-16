@@ -13,6 +13,7 @@ from typing import NoReturn
 from zipfile import ZipFile
 
 # third-party imports
+import pefile
 import yaml
 
 LUA_VERSION = "5.1"
@@ -53,16 +54,8 @@ def read_jit_version(header_path: Path) -> str:
     return match.group(1)
 
 
-def read_pe_machine(path: str) -> int | None:
-    with open(path, "rb") as f:
-        if f.read(2) != b"MZ":
-            return None
-        f.seek(0x3C)
-        e_lfanew = int.from_bytes(f.read(4), "little")
-        f.seek(e_lfanew)
-        if f.read(4) != b"PE\0\0":
-            return None
-        return int.from_bytes(f.read(2), "little")
+def read_pe_machine(path: str) -> int:
+    return pefile.PE(path, fast_load=True).FILE_HEADER.Machine
 
 
 def load_curated_rocks(manifest_path: Path) -> list[Rock]:
@@ -177,8 +170,6 @@ def verify_rock(tree_path: str, rock: Rock, expected_machine: int) -> list[str]:
                 problems.append(
                     f"{rock.name}: {path} has PE machine {machine:#06x}"
                     f" (expected {expected_machine:#06x})"
-                    if machine is not None
-                    else f"{rock.name}: {path} is not a valid PE file"
                 )
     return problems
 
