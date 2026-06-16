@@ -1,7 +1,6 @@
 """Assemble MacroQuest's curated LuaRocks tree for bundling."""
 
-from __future__ import annotations
-
+# standard imports
 import argparse
 import os
 import re
@@ -13,6 +12,7 @@ from pathlib import Path
 from typing import NoReturn
 from zipfile import ZipFile
 
+# third-party imports
 import yaml
 
 LUA_VERSION = "5.1"
@@ -46,10 +46,7 @@ def fail(message: str) -> NoReturn:
 
 
 def read_jit_version(header_path: Path) -> str:
-    try:
-        text = header_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        fail(f"could not read LuaJIT header {header_path}: {exc}")
+    text = header_path.read_text(encoding="utf-8")
     match = LUAJIT_VERSION_DEFINE_RE.search(text)
     if not match:
         fail(f"LUAJIT_VERSION define not found in {header_path}")
@@ -57,29 +54,19 @@ def read_jit_version(header_path: Path) -> str:
 
 
 def read_pe_machine(path: str) -> int | None:
-    try:
-        with open(path, "rb") as f:
-            if f.read(2) != b"MZ":
-                return None
-            f.seek(0x3C)
-            e_lfanew = int.from_bytes(f.read(4), "little")
-            f.seek(e_lfanew)
-            if f.read(4) != b"PE\0\0":
-                return None
-            return int.from_bytes(f.read(2), "little")
-    except OSError:
-        return None
+    with open(path, "rb") as f:
+        if f.read(2) != b"MZ":
+            return None
+        f.seek(0x3C)
+        e_lfanew = int.from_bytes(f.read(4), "little")
+        f.seek(e_lfanew)
+        if f.read(4) != b"PE\0\0":
+            return None
+        return int.from_bytes(f.read(2), "little")
 
 
 def load_curated_rocks(manifest_path: Path) -> list[Rock]:
-    try:
-        text = manifest_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        fail(
-            f"could not read {manifest_path}: {exc}\n"
-            "Is the contrib/luarocks submodule initialized? Run:\n"
-            "    git submodule update --init contrib/luarocks"
-        )
+    text = manifest_path.read_text(encoding="utf-8")
     data = yaml.safe_load(text)
     if not isinstance(data, dict) or not data:
         fail(f"{manifest_path} is not a usable curated manifest")
