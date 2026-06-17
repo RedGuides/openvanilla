@@ -100,7 +100,7 @@ jobs:
             git -C src/eqlib fetch --unshallow origin
             if ($LASTEXITCODE -ne 0) { exit 1 }
           }
-          git -C src/eqlib fetch origin $branch
+          git -C src/eqlib fetch origin "refs/heads/$branch`:refs/remotes/origin/$branch"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
           git -C src/eqlib merge-base --is-ancestor HEAD "origin/$branch"
