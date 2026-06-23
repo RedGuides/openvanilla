@@ -14,10 +14,18 @@ The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com
 
 ### Check out the latest source code
 
+> [!NOTE]
+> RedGuides supports three clients, each with its own tag. The examples below use `vv-live`; substitute the tag for your client:
+> * `vv-live` — EverQuest Live
+> * `vv-test` — EverQuest Test
+> * `vv-emu-rof2` — Emulator (RoF2)
+
 Create the checkout. This will create the subfolder **openvanilla** that contains a copy of the project.
 
 ```
 git clone https://github.com/RedGuides/openvanilla.git
+cd openvanilla
+git checkout vv-live
 ```
 
 Make sure that submodules are initialized. Move (cd) to the newly created **openvanilla** folder before executing this command.  If you have run this step already, you can skip it
@@ -36,7 +44,8 @@ MacroQuest is updated often, especially after a patch. Make sure before you buil
 
 If you already have the source, it is a good idea to make sure that you pull all the latest changes.
 ```
-git pull --rebase
+git fetch --tags --force
+git checkout vv-live
 ```
 
 Update submodules. This ensures that dependencies have the latest code.
