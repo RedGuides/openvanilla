@@ -12,13 +12,13 @@ The pre-built and supported version [Very Vanilla🍦](https://www.redguides.com
 * [Visual Studio 2022 Community](https://visualstudio.microsoft.com/downloads/)
 * [Git for Windows](https://git-scm.com/)
 
-### Check out the latest source code
-
 > [!NOTE]
-> RedGuides supports three clients, each with its own tag. The examples below use `vv-live`; substitute the tag for your client:
+> The examples below use `vv-live`; substitute the tag for your client:
 > * `vv-live` — EverQuest Live
 > * `vv-test` — EverQuest Test
-> * `vv-emu-rof2` — Emulator (RoF2)
+> * `vv-emu-rof2` — EverQuest RoF2 (Emulator)
+
+### Check out the latest source code
 
 Create the checkout. This will create the subfolder **openvanilla** that contains a copy of the project.
 
