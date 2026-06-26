@@ -1,14 +1,12 @@
 #
-# Per target:
-#   live / test  -> merge upstream macroquest, bump src/eqlib
-#                   to redguides/eqlib <target> head, push, tag vv-<target>.
-#   emu-rof2     -> sync redguides/eqlib from upstream mq, merge upstream
-#                   rel-emu-rof2, bump src/eqlib to redguides/eqlib emu-rof2
-#                   head, push, tag vv-emu-rof2.
+# Merges upstream MacroQuest into master and pushes.
 #
-# On merge conflicts other than the src/eqlib gitlink, resolve on the runner:
-# commit, push, then re-run this workflow to finish the pointer bump/tag.
-name: OV Sync & Tag With Upstream
+# Per target (selects the upstream ref to merge):
+#   live / test  -> merge upstream/master into master.
+#   emu-rof2     -> sync redguides/eqlib from upstream mq first, then merge
+#                   upstream rel-emu-rof2 into master.
+
+name: OV Sync With Upstream
 
 on:
   workflow_dispatch:
@@ -117,10 +115,11 @@ jobs:
             $unmerged = @(git diff --name-only --diff-filter=U)
 
             if ($unmerged -contains 'src/eqlib') {
-              # Expected gitlink conflict: resolve straight to our fork's
-              # <target> branch head.
-              $want = (git -C src/eqlib rev-parse "origin/$env:TARGET").Trim()
-              if ($LASTEXITCODE -ne 0) { throw "eqlib branch '$env:TARGET' not found in redguides/eqlib" }
+              # Expected gitlink conflict. master tracks the live eqlib pointer;
+              # each build re-resolves eqlib to its own branch tip at build time,
+              # so resolve straight to redguides/eqlib live head here.
+              $want = (git -C src/eqlib rev-parse "origin/live").Trim()
+              if ($LASTEXITCODE -ne 0) { throw "eqlib branch 'live' not found in redguides/eqlib" }
               Invoke-Git -C src/eqlib checkout $want
               Invoke-Git add src/eqlib
               $unmerged = @(git diff --name-only --diff-filter=U)
@@ -138,54 +137,3 @@ jobs:
           }
 
           Invoke-Git push $auth master
-
-      - name: Update eqlib pointer for target
-        shell: pwsh
-        run: |
-          function Invoke-Git {
-            git @args
-            if ($LASTEXITCODE -ne 0) { throw "git $args failed (exit $LASTEXITCODE)" }
-          }
-
-          $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
-          Set-Location $env:REPO_DIR
-
-          Invoke-Git -C src/eqlib fetch origin
-          $want = (git -C src/eqlib rev-parse "origin/$env:TARGET").Trim()
-          if ($LASTEXITCODE -ne 0) { throw "eqlib branch '$env:TARGET' not found in redguides/eqlib" }
-          $have = (git rev-parse "HEAD:src/eqlib").Trim()
-
-          if ($want -eq $have) {
-            Write-Host "src/eqlib already points at $env:TARGET head ($want)."
-            exit 0
-          }
-
-          Invoke-Git -C src/eqlib checkout $want
-          Invoke-Git add src/eqlib
-          Invoke-Git commit -m "eqlib for $env:TARGET"
-          Invoke-Git push $auth master
-          Write-Host "Bumped src/eqlib $have -> $want ($env:TARGET head)."
-
-      - name: Force-update vv-<target> tag
-        shell: pwsh
-        run: |
-          Set-Location $env:REPO_DIR
-          $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
-          $tag = "vv-$env:TARGET"
-
-          $masterSha = (git rev-parse master).Trim()
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          $remoteTagSha = ((git ls-remote $auth "refs/tags/$tag") -split "\s+")[0]
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-          if ($remoteTagSha -eq $masterSha) {
-            Write-Host "$tag already points at $masterSha; skipping tag push (no release trigger)."
-            exit 0
-          }
-
-          git tag -f $tag master
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          git push $auth "refs/tags/$tag" --force
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          Write-Host "Pushed $tag at $masterSha -- release build will trigger."
