@@ -1,24 +1,24 @@
 #
-# Merges upstream MacroQuest into master and pushes.
+# Refreshes redguides/eqlib from upstream, then merges upstream MacroQuest into
+# master and pushes. Same build on every client, so the only choice is the ref:
+#   master       -> merge upstream/master into master.
+#   rel-emu-rof2 -> merge upstream's tagged emu release into master.
 #
-# Per target (selects the upstream ref to merge):
-#   live / test  -> merge upstream/master into master.
-#   emu-rof2     -> sync redguides/eqlib from upstream mq first, then merge
-#                   upstream rel-emu-rof2 into master.
+# master always tracks the live eqlib pointer; each build floats eqlib to its
+# own client branch at build time. This workflow never moves vv-* tags.
 
 name: OV Sync With Upstream
 
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: Client target to update
+      source:
+        description: Upstream ref to merge into master
         required: true
         type: choice
         options:
-          - emu-rof2
-          - live
-          - test
+          - master
+          - rel-emu-rof2
   repository_dispatch:
     types: [sync-upstream-emu-rof2]
 
@@ -33,29 +33,25 @@ jobs:
     env:
       REPO_DIR: C:\actions-runner\repos\openvanilla
       RG_SYNC_PAT: ${{ secrets.RG_SYNC_PAT }}
-      TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'emu-rof2' }}
+      SOURCE: ${{ github.event_name == 'workflow_dispatch' && inputs.source || 'rel-emu-rof2' }}
     steps:
-      - name: Sync redguides/eqlib from upstream (emu only, and wait)
-        if: startsWith(env.TARGET, 'emu')
+      - name: Sync redguides/eqlib from upstream (and wait)
+        id: eqlib_sync
+        uses: mathze/workflow-dispatch-action@5567116de0091812e2149515f4027bd6603ee3f0 # v1.4.0
+        with:
+          owner: redguides
+          repo: eqlib
+          workflow-name: sync_upstream.yaml
+          ref: live
+          token: ${{ secrets.RG_SYNC_PAT }}
+          run-id: dummy # presence enables trigger-and-wait mode
+          fail-on-error: true
+          wait-timeout: 30m
+
+      - name: Verify eqlib sync succeeded
+        if: steps.eqlib_sync.outputs.run-conclusion != 'success'
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.RG_SYNC_PAT }}
-        run: |
-          $before = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-          gh workflow run sync_upstream.yaml --repo redguides/eqlib --ref live
-          if ($LASTEXITCODE -ne 0) { throw "Failed to dispatch eqlib sync workflow" }
-
-          $runId = $null
-          for ($i = 0; $i -lt 12 -and -not $runId; $i++) {
-            Start-Sleep -Seconds 5
-            $runId = gh run list --repo redguides/eqlib --workflow sync_upstream.yaml `
-              --created ">=$before" --limit 1 --json databaseId --jq '.[0].databaseId'
-          }
-          if (-not $runId) { throw "eqlib sync run never appeared on redguides/eqlib" }
-
-          gh run watch $runId --repo redguides/eqlib --exit-status
-          if ($LASTEXITCODE -ne 0) { throw "eqlib sync failed (run $runId). Not merging MQ until eqlib is current." }
+        run: throw "eqlib sync concluded '${{ steps.eqlib_sync.outputs.run-conclusion }}' (run ${{ steps.eqlib_sync.outputs.run-id }}). Not merging MQ until eqlib is current."
 
       - name: Prepare working copy
         shell: pwsh
@@ -98,8 +94,8 @@ jobs:
           }
 
           $auth = "https://x-access-token:$env:RG_SYNC_PAT@github.com/redguides/openvanilla.git"
-          # emu targets track a release tag; live/test track upstream master.
-          $mergeRef = if ($env:TARGET -like 'emu*') { "rel-$env:TARGET" } else { 'upstream/master' }
+          # 'master' tracks upstream's mainline; 'rel-emu-rof2' tracks the tagged release.
+          $mergeRef = if ($env:SOURCE -eq 'master') { 'upstream/master' } else { $env:SOURCE }
           Set-Location $env:REPO_DIR
 
           git remote add upstream https://github.com/macroquest/macroquest.git 2>$null
