@@ -66,7 +66,7 @@ To go back to **Live**:
 git -C src/eqlib checkout live
 ```
 
-> [!INFO]
+> [!IMPORTANT]
 > `git submodule update` will reset `eqlib` back to Live. Re-run your client's command above to fix.
 
 > [!NOTE]
