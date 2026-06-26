@@ -35,23 +35,14 @@ jobs:
       RG_SYNC_PAT: ${{ secrets.RG_SYNC_PAT }}
       SOURCE: ${{ github.event_name == 'workflow_dispatch' && inputs.source || 'rel-emu-rof2' }}
     steps:
-      - name: Sync redguides/eqlib from upstream (and wait)
-        id: eqlib_sync
-        uses: mathze/workflow-dispatch-action@5567116de0091812e2149515f4027bd6603ee3f0 # v1.4.0
-        with:
-          owner: redguides
-          repo: eqlib
-          workflow-name: sync_upstream.yaml
-          ref: live
-          token: ${{ secrets.RG_SYNC_PAT }}
-          run-id: dummy # presence enables trigger-and-wait mode
-          fail-on-error: true
-          wait-timeout: 30m
-
-      - name: Verify eqlib sync succeeded
-        if: steps.eqlib_sync.outputs.run-conclusion != 'success'
+      # Fire-and-forget: the eqlib sync run should be checked manually
+      - name: Trigger redguides/eqlib upstream sync
         shell: pwsh
-        run: throw "eqlib sync concluded '${{ steps.eqlib_sync.outputs.run-conclusion }}' (run ${{ steps.eqlib_sync.outputs.run-id }}). Not merging MQ until eqlib is current."
+        env:
+          GH_TOKEN: ${{ secrets.RG_SYNC_PAT }}
+        run: |
+          gh workflow run sync_upstream.yaml --repo redguides/eqlib --ref live
+          if ($LASTEXITCODE -ne 0) { throw "Failed to dispatch eqlib upstream sync." }
 
       - name: Prepare working copy
         shell: pwsh
@@ -114,8 +105,7 @@ jobs:
               # Expected gitlink conflict. master tracks the live eqlib pointer;
               # each build re-resolves eqlib to its own branch tip at build time,
               # so resolve straight to redguides/eqlib live head here.
-              $want = (git -C src/eqlib rev-parse "origin/live").Trim()
-              if ($LASTEXITCODE -ne 0) { throw "eqlib branch 'live' not found in redguides/eqlib" }
+              $want = (Invoke-Git -C src/eqlib rev-parse origin/live).Trim()
               Invoke-Git -C src/eqlib checkout $want
               Invoke-Git add src/eqlib
               $unmerged = @(git diff --name-only --diff-filter=U)
