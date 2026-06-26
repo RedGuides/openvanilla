@@ -2,9 +2,6 @@ name: OV Build MacroQuest Emu RoF2 Release
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - vv-emu-rof2
 
 concurrency:
   group: ${{ github.workflow }}

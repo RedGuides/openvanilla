@@ -1,0 +1,52 @@
+name: "Checkout plugins from list"
+description: >-
+  Clone git repositories listed in the markdown file.
+inputs:
+  list-file:
+    description: "Path to the plugin-list markdown file (relative to the workspace)."
+    required: true
+  section:
+    description: "Heading to read, without the leading '# ' (e.g. All, 'Live/Test only', 'RoF2 only')."
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - shell: pwsh
+      run: |
+        $listFile = '${{ inputs.list-file }}'
+        $section  = '${{ inputs.section }}'
+
+        # Single pass over the file. Sections are delimited by '# Heading' comment
+        # lines inside the markdown code fence; a fence line ends the current section.
+        $inSection = $false
+        $found     = $false
+        $failed    = @()
+
+        foreach ($line in Get-Content -LiteralPath $listFile) {
+          $trimmed = $line.Trim()
+
+          # A '# Heading' line starts a section (and ends the previous one).
+          if ($trimmed -match '^#\s*(.+)$') {
+            $inSection = $Matches[1].Trim() -eq $section
+            if ($inSection) { $found = $true }
+            continue
+          }
+          # The closing code fence ends any open section.
+          if ($trimmed.StartsWith('```')) { $inSection = $false; continue }
+
+          if ($inSection -and $trimmed.StartsWith('git clone')) {
+            # Invoke git directly (no Invoke-Expression) with the line's own arguments.
+            $gitArgs = ($trimmed -split '\s+') | Select-Object -Skip 1
+            Write-Host "git $($gitArgs -join ' ')"
+            & git @gitArgs
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Clone failed (exit $LASTEXITCODE): $trimmed"
+              $failed += $trimmed
+            }
+          }
+        }
+
+        if (-not $found) { throw "Section '# $section' not found in $listFile" }
+        if ($failed.Count -gt 0) {
+          throw "$($failed.Count) clone(s) failed in section '# $section' of ${listFile}:`n$($failed -join "`n")"
+        }

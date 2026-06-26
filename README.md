@@ -12,12 +12,6 @@ The supported version [Very Vanilla🍦](https://www.redguides.com/community/) f
 * [Visual Studio 2022 Community](https://visualstudio.microsoft.com/downloads/)
 * [Git for Windows](https://git-scm.com/)
 
-> [!NOTE]
-> The examples below use `vv-live`; substitute the tag for your client:
-> * `vv-live` — EverQuest Live
-> * `vv-test` — EverQuest Test
-> * `vv-emu-rof2` — EverQuest RoF2 (Emulator)
-
 ### Check out the latest source code
 
 Create the checkout. This will create the subfolder **openvanilla** that contains a copy of the project.
@@ -25,7 +19,6 @@ Create the checkout. This will create the subfolder **openvanilla** that contain
 ```
 git clone https://github.com/RedGuides/openvanilla.git
 cd openvanilla
-git checkout vv-live
 ```
 
 Make sure that submodules are initialized. Move (cd) to the newly created **openvanilla** folder before executing this command.  If you have run this step already, you can skip it
@@ -44,8 +37,7 @@ MacroQuest is updated often, especially after a patch. Make sure before you buil
 
 If you already have the source, it is a good idea to make sure that you pull all the latest changes.
 ```
-git fetch --tags --force
-git checkout vv-live
+git pull --rebase
 ```
 
 Update submodules. This ensures that dependencies have the latest code.
@@ -54,6 +46,31 @@ git submodule update
 ```
 
 At this point, the source should be ready to compile. Proceed to building.
+
+### Building for Test or Emulator
+The only difference between builds is the `eqlib` submodule. The `master` branch pins `eqlib` to **Live**. To build a different client, point `eqlib` at the matching branch before building:
+
+
+For **EverQuest Test**:
+```
+git -C src/eqlib checkout test
+```
+
+For **EverQuest RoF2 (Emulator)**:
+```
+git -C src/eqlib checkout emu-rof2
+```
+
+To go back to **Live**:
+```
+git -C src/eqlib checkout live
+```
+
+> [!INFO]
+> `git submodule update` will reset `eqlib` back to Live. Re-run your client's command above to fix.
+
+> [!NOTE]
+> RoF2 (Emulator) builds use the `Win32` platform instead of `x64` in the Build Steps below.
 
 ### Build Steps
 

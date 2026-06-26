@@ -2,9 +2,6 @@ name: OV Build MacroQuest Test Release
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - vv-test
 
 concurrency:
   group: ${{ github.workflow }}
