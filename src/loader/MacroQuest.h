@@ -60,6 +60,7 @@ constexpr int WM_USER_PROCESS_REMOVED       = (WM_USER + 4);
 constexpr int WM_USER_HOTKEY_ADD            = (WM_USER + 5);
 constexpr int WM_USER_HOTKEY_REMOVE         = (WM_USER + 6);
 constexpr int WM_USER_REDFETCH_CHECK        = (WM_USER + 7);
+constexpr int WM_USER_REDFETCH_UNLOAD       = (WM_USER + 8);
 
 
 //----------------------------------------------------------------------------
