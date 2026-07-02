@@ -1104,13 +1104,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT MSG, WPARAM wParam, LPARAM lParam)
 		HandleRedfetchCheckResult(static_cast<uintptr_t>(wParam));
 		break;
 
-	case WM_USER_REDFETCH_UNLOAD:
-		if (wParam != 0)
-			SendForceUnloadAllCommand();
-		else
-			SendUnloadAllCommand();
-		break;
-
 	case WM_USER_HOTKEY_ADD:
 	{
 		uint16_t modkey = static_cast<uint16_t>(wParam);
@@ -1502,34 +1495,6 @@ static void LaunchRedfetch(bool isUpdate = false)
 
 	ShellExecuteW(nullptr, L"open", redfetchPath.wstring().c_str(),
 		args.empty() ? nullptr : args.c_str(), nullptr, SW_SHOW);
-}
-
-// signals the running loader to broadcast the unload.
-static int HandleRedfetchUnloadCommand(bool force)
-{
-	char winClass[64] = { 0 };
-	char winName[64] = { 0 };
-	mq::GetPrivateProfileString("MacroQuest", "MacroQuestWinClassName", "__MacroQuestTray", winClass, lengthof(winClass), internal_paths::MQini);
-	mq::GetPrivateProfileString("MacroQuest", "MacroQuestWinName", "MacroQuest", winName, lengthof(winName), internal_paths::MQini);
-
-	HWND hWndRunning = ::FindWindowA(winClass, winName);
-	if (hWndRunning == nullptr)
-	{
-		SPDLOG_INFO("redfetch -unload: no running MacroQuest loader");
-		return 0;
-	}
-
-	SPDLOG_INFO("redfetch -unload: requesting {}unload of all instances", force ? "force-" : "");
-
-	DWORD_PTR result = 0;
-	if (::SendMessageTimeoutA(hWndRunning, WM_USER_REDFETCH_UNLOAD, force ? 1 : 0, 0,
-		SMTO_ABORTIFHUNG, 5000, &result) == 0)
-	{
-		SPDLOG_WARN("redfetch -unload: failed to signal the running loader, error {}", ::GetLastError());
-		return 1;
-	}
-
-	return 0;
 }
 
 void ShowRedGuidesMenu()
@@ -2557,8 +2522,6 @@ int WINAPI CALLBACK WinMain(
 	bool spawnedProcess = false;
 	bool disableAppCompatCheck = false;
 	bool injectOnce = false;
-	bool unloadRequest = false;
-	bool unloadForce = false;
 	for (int i = 1; i < __argc; ++i)
 	{
 		// Recreate the command line
@@ -2585,14 +2548,6 @@ int WINAPI CALLBACK WinMain(
 		else if (!spawnedProcess && mq::ci_find_substr(thisArg, "spawnedprocess") != -1)
 		{
 			spawnedProcess = true;
-		}
-		else if (mq::ci_find_substr(thisArg, "unload") != -1)
-		{
-			unloadRequest = true;
-		}
-		else if (mq::ci_find_substr(thisArg, "force") != -1)
-		{
-			unloadForce = true;
 		}
 	}
 
@@ -2633,9 +2588,6 @@ int WINAPI CALLBACK WinMain(
 	s_isElevated = IsElevated();
 
 	SPDLOG_INFO("Starting MacroQuest Loader{}. Built {}", s_isElevated ? " (Elevated)" : "", __TIMESTAMP__);
-
-	if (unloadRequest)
-		return HandleRedfetchUnloadCommand(unloadForce);
 
 	// Initialize COM
 	auto coCleanup = wil::CoInitializeEx(COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE);
