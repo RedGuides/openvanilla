@@ -266,6 +266,13 @@ public:
 
 	std::string replace_text(std::string_view text) const
 	{
+		// Most rendered text won't match, and this runs inside per-frame draw detours for
+		// every replacer. Bail out before computing the replacement (which does spawn
+		// lookups, macro parsing and formatting) or rebuilding the string when there is
+		// no match at all.
+		if (!std::regex_search(std::cbegin(text), std::cend(text), search_string))
+			return std::string(text);
+
 		std::string result;
 		std::regex_replace(std::back_inserter(result), std::cbegin(text), std::cend(text), search_string, anonymize());
 		return result;

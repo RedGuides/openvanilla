@@ -565,13 +565,21 @@ bool MQ2WindowType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index, 
 		}
 
 		int nColumn = 0;
-		if (char* pComma = strchr(Index, ','))
+
+		// The index can optionally select a column with a ", #" suffix. Only treat the
+		// comma as a column separator when the text following it is a number, because
+		// list item text can itself contain commas (#425).
+		if (char* pComma = strrchr(Index, ','))
 		{
-			nColumn = GetIntFromString(&pComma[1], nColumn) - 1;
-			if (nColumn < 0) nColumn = 0;
-			if (nColumn >= pListWnd->Columns.GetCount())
-				return false;
-			*pComma = '\0';
+			int nSpecifiedColumn = GetIntFromString(&pComma[1], INT_MIN);
+			if (nSpecifiedColumn != INT_MIN)
+			{
+				nColumn = nSpecifiedColumn - 1;
+				if (nColumn < 0) nColumn = 0;
+				if (nColumn >= pListWnd->Columns.GetCount())
+					return false;
+				*pComma = '\0';
+			}
 		}
 
 		if (IsNumber(Index))

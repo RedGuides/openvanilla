@@ -126,8 +126,6 @@ jobs:
           if ($debug) {
             $DebugPreference = 'Continue'
           }
-          $ErrorActionPreference = 'Continue'
-          $hadFailure = $false
 
           $LuaCloneDir = "${{ github.workspace }}\build\Lua\LuaRocks"
           $LuaRocksDir = "$LuaCloneDir\LuaRocks"
@@ -272,7 +270,7 @@ jobs:
               $LuaSearchOutput | ForEach-Object {
                 if ([string]::IsNullOrWhiteSpace($VersionSearch)) {
                   if ($CorrectSection) {
-                    if ($_ -match "(src)") {
+                    if ($_ -match '\(') {
                       $VersionSearch = $_.Split("(")[0].Trim()
                     }
                   } elseif ($_.Trim() -eq "$LuaRock")  {
@@ -292,7 +290,7 @@ jobs:
               $UpstreamLuaSearchOutput | ForEach-Object {
                 if ([string]::IsNullOrWhiteSpace($UpstreamVersionSearch)) {
                   if ($CorrectSection) {
-                    if ($_ -match "(src)") {
+                    if ($_ -match '\(') {
                       $UpstreamVersionSearch = $_.Split("(")[0].Trim()
                     }
                   } elseif ($_.Trim() -eq "$LuaRock")  {
@@ -320,13 +318,16 @@ jobs:
                 }
               }
 
-              if (-NOT ($VersionSearch -eq $UpstreamVersionSearch)) {
+              $ignoredUpstream = @($yaml[$LuaRock].ignore_upstream)
+              if ((-NOT ($VersionSearch -eq $UpstreamVersionSearch)) -And ($ignoredUpstream -notcontains $UpstreamVersionSearch)) {
                 $discordMessage = "A newer version of $LuaRock exists upstream, the MQ moonrocks repository needs to be updated: (Ours: [$VersionSearch] Upstream: [$UpstreamVersionSearch])"
                 Write-Warning $discordMessage
                 Send-DiscordNotification `
                   -Title "Newer version of Moonrock [$LuaRock] upstream (${{ github.ref_name }})" `
                   -Description $discordMessage `
                   -Color "16705372"
+              } elseif ((-NOT ($VersionSearch -eq $UpstreamVersionSearch)) -And ($ignoredUpstream -contains $UpstreamVersionSearch)) {
+                Write-Debug "Ignoring upstream version [$UpstreamVersionSearch] of $LuaRock (Ours: [$VersionSearch]) per ignore_upstream"
               }
 
               $installModule = $false
@@ -387,7 +388,6 @@ jobs:
                     -Color "15548997"
                   Write-Debug -Message $LuaInstallOutput
                   Write-Error $failMsg
-                  $hadFailure = $true
                 } else {
                   if (-NOT $installedThisRun.ContainsKey($LuaRock)) {
                     $failMsg = "Failed to install $LuaRock during this run."
@@ -397,7 +397,6 @@ jobs:
                       -Color "15548997"
                     Write-Debug $LuaInstallOutput
                     Write-Error $failMsg
-                    $hadFailure = $true
                   } else {
                     $filesGood = $true
                     if ($yaml[$LuaRock].files.Count -gt 0) {
@@ -411,7 +410,6 @@ jobs:
                             -Color "15548997"
                           Write-Debug $LuaInstallOutput
                           Write-Error $failMsg
-                          $hadFailure = $true
                         }
                       }
                     } elseif ($yaml[$LuaRock].lua_only -eq $true) {
@@ -425,7 +423,6 @@ jobs:
                         -Color "15548997"
                       Write-Debug -Message $LuaInstallOutput
                       Write-Error $failMsg
-                      $hadFailure = $true
                     }
                     if ($filesGood) {
                       Set-Location $LuaRockServer
@@ -462,7 +459,6 @@ jobs:
               $LuaManifestOutput = ./luarocks-admin make-manifest $LuaRockServer
               if (!$?) {
                 Write-Error "Failed Updating Manifest: $LuaManifestOutput"
-                $hadFailure = $true
               } else {
                 $gitStatusOutput = git -C "$LuaRockServerRoot" status --porcelain
                                       # untracked files exist                            # uncommitted changes exist
@@ -470,12 +466,10 @@ jobs:
                   $gitOutput = git -C "$LuaRockServerRoot" add "$LuaRockServerRoot"
                   if (!$?) {
                     Write-Error "LuaRocks could not add $LuaRockServerRoot -- $gitOutput"
-                    $hadFailure = $true
                   } else {
                     $gitOutput = git -C "$LuaRockServerRoot" commit -m "Automatic update of LuaRocks $Platform"
                     if (!$?) {
                       Write-Error "LuaRocks could not commit changes -- $gitOutput"
-                      $hadFailure = $true
                     } else {
                       $cmd = "git -C `"$LuaRockServerRoot`" push$gitQuiet"
                       $cmd = $cmd.Trim()
@@ -483,20 +477,13 @@ jobs:
                       $gitOutput = Invoke-Expression $cmd
                       if (!$?) {
                         Write-Error "LuaRocks could not push changes -- $gitOutput"
-                        $hadFailure = $true
                       }
                     }
                   }
                 } else {
                   # tree is clean
                   Write-Error "LuaRocks expected dirty tree, but nothing to commit"
-                  $hadFailure = $true
                 }
               }
             }
-          }
-
-          if ($hadFailure) {
-            Write-Error "LuaRocks update completed with one or more failures (see above)."
-            exit 1
           }

@@ -65,7 +65,7 @@ bool MQ2XTargetType::GetMember(MQVarPtr VarPtr, const char* Member, char* Index,
 		return true;
 
 	case XTargetMembers::Name:
-		if (xts->Name[0] != 0)
+		if (xts->XTargetSlotStatus != eXTSlotEmpty && xts->Name[0] != 0)
 			strcpy_s(DataTypeTemp, xts->Name);
 		else
 			strcpy_s(DataTypeTemp, "NULL");
@@ -99,7 +99,8 @@ bool MQ2XTargetType::ToString(MQVarPtr VarPtr, char* Destination)
 	ExtendedTargetSlot* xts = nullptr;
 
 	if (pLocalPC
-		&& (xts = pLocalPC->pExtendedTargetList->GetSlot(index)))
+		&& (xts = pLocalPC->pExtendedTargetList->GetSlot(index))
+		&& xts->XTargetSlotStatus != eXTSlotEmpty)
 	{
 		strcpy_s(Destination, MAX_STRING, xts->Name);
 	}

@@ -891,11 +891,17 @@ void MQCommandAPI::PulseCommands()
 
 	while (m_pTimedCommands && m_pTimedCommands->time <= Now)
 	{
-		MQTimedCommand* pNext = m_pTimedCommands->pNext;
-		DoCommand(m_pTimedCommands->command.c_str(), false, m_pTimedCommands->pluginHandle);
+		MQTimedCommand* pTimedCommand = m_pTimedCommands;
 
-		delete m_pTimedCommands;
-		m_pTimedCommands = pNext;
+		// Unlink the command from the list before executing it. Executing the command
+		// may schedule new timed commands, which would modify the list.
+		m_pTimedCommands = pTimedCommand->pNext;
+		if (m_pTimedCommands)
+			m_pTimedCommands->pLast = nullptr;
+
+		DoCommand(pTimedCommand->command.c_str(), false, pTimedCommand->pluginHandle);
+
+		delete pTimedCommand;
 	}
 }
 

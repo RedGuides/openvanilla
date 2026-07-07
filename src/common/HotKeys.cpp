@@ -331,7 +331,7 @@ const char* GetKeyNameFromVirtualKey(uint16_t virtualKey)
 	case 'S': return "S";
 	case 'T': return "T";
 	case 'U': return "U";
-	case 'V': return "B";
+	case 'V': return "V";
 	case 'W': return "W";
 	case 'X': return "X";
 	case 'Y': return "Y";

@@ -624,7 +624,7 @@ PLUGIN_API void OnDrawHUD()
 			else
 			{
 				X = SX + pElement->X;
-				Y = SX + pElement->Y;
+				Y = SY + pElement->Y;
 			}
 
 			if (bCheckParse)
