@@ -306,18 +306,21 @@ jobs:
             echo "vcpkg_installed=false" >> $env:GITHUB_OUTPUT
           }
 
+      - name: "[Build] Resolve vcpkg cache paths"
+        id: vcpkg_paths
+        shell: pwsh
+        run: |
+          $p = & "$env:GITHUB_WORKSPACE/tools/build_scripts/Get-VcpkgState.ps1" -Mode CachePaths
+          "list<<__PATHS_END__" >> $env:GITHUB_OUTPUT
+          $p                    >> $env:GITHUB_OUTPUT
+          "__PATHS_END__"       >> $env:GITHUB_OUTPUT
+
       - name: "[Build] Restore vcpkg Cache"
         if: steps.check_vcpkg.outputs.vcpkg_installed != 'true'
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
-          path: |
-            contrib/vcpkg/buildtrees
-            contrib/vcpkg/downloads
-            contrib/vcpkg/installed
-            contrib/vcpkg/packages
-            contrib/vcpkg/vcpkg.exe
-            contrib/vcpkg/vcpkg_mq_last_bootstrap*.txt
-          key: ${{ runner.os }}-vcpkg-${{ env.platform }}-${{ github.run_id }}
+          path: ${{ steps.vcpkg_paths.outputs.list }}
+          key: ${{ runner.os }}-vcpkg-${{ env.platform }}-
           restore-keys: |
             ${{ runner.os }}-vcpkg-${{ env.platform }}-
             ${{ runner.os }}-vcpkg-
@@ -342,6 +345,32 @@ jobs:
       - name: "[Build] Build VeryVanilla ${{ env.platform }} Release for ${{ inputs.client_target }}"
         if: env.vv_enabled == 'true'
         run: msbuild src/VVCustom.sln /NoLogo /Verbosity:minimal /p:Configuration=Release /p:Platform=${{ env.platform }} /m /p:PreferredToolArchitecture=x64
+
+      - name: "[Build] Fingerprint vcpkg (post-build)"
+        id: vcpkg_post
+        shell: pwsh
+        run: |
+          $h = try { & "$env:GITHUB_WORKSPACE/tools/build_scripts/Get-VcpkgState.ps1" -Mode Fingerprint } catch { "none" }
+          echo "hash=$h" >> $env:GITHUB_OUTPUT
+          # Surface the fingerprint in the run summary so vcpkg changes between runs are easy to spot.
+          "## vcpkg fingerprint" >> $env:GITHUB_STEP_SUMMARY
+          $h                     >> $env:GITHUB_STEP_SUMMARY
+
+      - name: "[Build] Look up existing vcpkg cache"
+        id: vcpkg_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.vcpkg_paths.outputs.list }}
+          key: ${{ runner.os }}-vcpkg-${{ env.platform }}-${{ steps.vcpkg_post.outputs.hash }}
+          lookup-only: true
+
+      - name: "[Build] Save vcpkg Cache"
+        if: steps.vcpkg_cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ steps.vcpkg_paths.outputs.list }}
+          key: ${{ runner.os }}-vcpkg-${{ env.platform }}-${{ steps.vcpkg_post.outputs.hash }}
 
       - name: "[Notify] Discord build SHAs"
         if: success()
