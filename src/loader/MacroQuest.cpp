@@ -1545,8 +1545,16 @@ struct RedfetchUpdateItem
 {
 	std::string resourceId;
 	std::string name;
+	std::string version;
 	int64_t availableVersionId = 0;
 };
+
+static std::string RedfetchItemLabel(const RedfetchUpdateItem& item)
+{
+	if (item.version.empty())
+		return item.name;
+	return fmt::format("{} {}", item.name, item.version);
+}
 
 struct RedfetchStatus
 {
@@ -1556,7 +1564,34 @@ struct RedfetchStatus
 	std::string managedPath; // MQ path redfetch manages for this env; empty if unresolved
 	std::optional<std::chrono::system_clock::time_point> checkedAt;
 	std::vector<RedfetchUpdateItem> items;
+	bool autoUpdate = false;
+	bool pendingRestart = false;
+	std::string pendingRestartVersion;
+	std::vector<RedfetchUpdateItem> installed;
 };
+
+static RedfetchUpdateItem ParseRedfetchUpdateItem(const nlohmann::json& item)
+{
+	RedfetchUpdateItem entry;
+
+	const auto resourceId = item.find("resource_id");
+	if (resourceId != item.end() && resourceId->is_string())
+		entry.resourceId = resourceId->get<std::string>();
+
+	const auto name = item.find("name");
+	if (name != item.end() && name->is_string())
+		entry.name = name->get<std::string>();
+
+	const auto version = item.find("version");
+	if (version != item.end() && version->is_string())
+		entry.version = version->get<std::string>();
+
+	const auto availableVersionId = item.find("available_version_id");
+	if (availableVersionId != item.end() && availableVersionId->is_number_integer())
+		entry.availableVersionId = availableVersionId->get<int64_t>();
+
+	return entry;
+}
 
 // Reads status file from redfetch
 static std::optional<RedfetchStatus> ReadRedfetchUpdateStatus()
@@ -1613,25 +1648,31 @@ static std::optional<RedfetchStatus> ReadRedfetchUpdateStatus()
 			{
 				for (const auto& item : *items)
 				{
-					if (!item.is_object())
-						continue;
-
-					RedfetchUpdateItem entry;
-
-					const auto resourceId = item.find("resource_id");
-					if (resourceId != item.end() && resourceId->is_string())
-						entry.resourceId = resourceId->get<std::string>();
-
-					const auto name = item.find("name");
-					if (name != item.end() && name->is_string())
-						entry.name = name->get<std::string>();
-
-					const auto availableVersionId = item.find("available_version_id");
-					if (availableVersionId != item.end() && availableVersionId->is_number_integer())
-						entry.availableVersionId = availableVersionId->get<int64_t>();
-
-					status.items.push_back(std::move(entry));
+					if (item.is_object())
+						status.items.push_back(ParseRedfetchUpdateItem(item));
 				}
+			}
+		}
+
+		const auto autoUpdate = doc.find("auto_update");
+		if (autoUpdate != doc.end() && autoUpdate->is_boolean())
+			status.autoUpdate = autoUpdate->get<bool>();
+
+		const auto pendingRestart = doc.find("pending_restart");
+		if (pendingRestart != doc.end() && pendingRestart->is_boolean())
+			status.pendingRestart = pendingRestart->get<bool>();
+
+		const auto pendingRestartVersion = doc.find("pending_restart_version");
+		if (pendingRestartVersion != doc.end() && pendingRestartVersion->is_string())
+			status.pendingRestartVersion = pendingRestartVersion->get<std::string>();
+
+		const auto installed = doc.find("installed");
+		if (installed != doc.end() && installed->is_array())
+		{
+			for (const auto& item : *installed)
+			{
+				if (item.is_object())
+					status.installed.push_back(ParseRedfetchUpdateItem(item));
 			}
 		}
 
@@ -1694,28 +1735,6 @@ static void WriteRedfetchCheckState(const nlohmann::json& doc)
 	{
 		SPDLOG_DEBUG("Failed to write redfetch check state: {}", ex.what());
 	}
-}
-
-static std::optional<std::chrono::system_clock::time_point> GetRedfetchLastSpawn(
-	const nlohmann::json& state, const std::string& env)
-{
-	const auto envs = state.find("envs");
-	if (envs == state.end() || !envs->is_object())
-		return std::nullopt;
-
-	const auto entry = envs->find(env);
-	if (entry == envs->end() || !entry->is_object())
-		return std::nullopt;
-
-	const auto lastSpawn = entry->find("last_spawn");
-	if (lastSpawn == entry->end() || !lastSpawn->is_number_integer())
-		return std::nullopt;
-
-	const int64_t epoch = lastSpawn->get<int64_t>();
-	if (epoch <= 0)
-		return std::nullopt;
-
-	return std::chrono::system_clock::from_time_t(static_cast<time_t>(epoch));
 }
 
 static std::set<std::string> GetRedfetchNotified(const nlohmann::json& state, const std::string& env)
@@ -1836,8 +1855,13 @@ static bool ConfirmRedfetchUpdateTarget()
 		MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
 }
 
-// Toasts only when something new appears
-static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::string& env)
+static bool StartRedfetchUpdate(const RedfetchStatus& status, const std::string& env); // defined with the workers below
+
+// Only auto-update once per loader launch
+static bool s_redfetchUpdateStarted = false;
+
+// allowSpawn so a failed update can't spawn another one.
+static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::string& env, bool allowSpawn)
 {
 	if (status.schemaVersion != 1)
 	{
@@ -1857,6 +1881,30 @@ static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::strin
 		return;
 	}
 
+	if (allowSpawn && !s_redfetchUpdateStarted && status.autoUpdate
+		&& status.authState == "ok" && !status.items.empty())
+	{
+		if (StartRedfetchUpdate(status, env))
+			return;
+	}
+
+	if (status.authState == "ok" && !status.installed.empty())
+	{
+		std::string names;
+		constexpr size_t maxNames = 2;
+		const size_t count = status.installed.size();
+		const size_t shownNames = (std::min)(maxNames, count);
+		for (size_t i = 0; i < shownNames; ++i)
+		{
+			if (!names.empty())
+				names += ", ";
+			names += RedfetchItemLabel(status.installed[i]);
+		}
+		if (count > shownNames)
+			names += fmt::format(", +{} more", count - shownNames);
+		SPDLOG_INFO("redfetch updated in the background: {}", names);
+	}
+
 	if (!WinToast::instance()->isInitialized())
 		return;
 
@@ -1870,34 +1918,70 @@ static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::strin
 
 	if (status.authState == "ok")
 	{
+		// Remember installed items
+		for (const RedfetchUpdateItem& item : status.installed)
+			currentKeys.insert(fmt::format("installed:{}:{}", item.resourceId, item.availableVersionId));
+
 		if (status.items.empty())
 		{
-			// Nothing outdated; clear the stored set so a future update re-alerts.
-			state["envs"][env]["notified"] = nlohmann::json::array();
-			WriteRedfetchCheckState(state);
-			return;
+			if (status.pendingRestart)
+			{
+				// A background update staged a new MacroQuest.
+				if (currentKeys.empty())
+					currentKeys.insert("installed:pending_restart");
+
+				firstLine = status.pendingRestartVersion.empty()
+					? "A new MacroQuest is ready"
+					: fmt::format("MacroQuest updated to {}", status.pendingRestartVersion);
+				secondLine = "Exit and restart Very Vanilla MQ at your leisure.";
+			}
+			else if (!status.installed.empty())
+			{
+				const size_t count = status.installed.size();
+				constexpr size_t maxNames = 2;
+				const size_t shownNames = (std::min)(maxNames, count);
+				const size_t extras = count - shownNames;
+				for (size_t i = 0; i < shownNames; ++i)
+				{
+					if (i > 0)
+						secondLine += (extras == 0 && i + 1 == shownNames) ? " and " : ", ";
+					secondLine += RedfetchItemLabel(status.installed[i]);
+				}
+				if (extras > 0)
+					secondLine += fmt::format(", and {} other{}", extras, extras == 1 ? "" : "s");
+
+				firstLine = "Updated in the background";
+			}
+			else
+			{
+				state["envs"][env]["notified"] = currentKeys;
+				WriteRedfetchCheckState(state);
+				return;
+			}
 		}
-
-		for (const RedfetchUpdateItem& item : status.items)
-			currentKeys.insert(fmt::format("{}:{}", item.resourceId, item.availableVersionId));
-
-		action = RedfetchNotificationHandler::Action::Update;
-		actionLabel = "Update now";
-
-		const size_t count = status.items.size();
-		firstLine = fmt::format("{} update{} available", count, count == 1 ? "" : "s");
-
-		// A few names plus "+N more" keeps the toast short.
-		constexpr size_t maxNames = 2;
-		const size_t shownNames = (std::min)(maxNames, count);
-		for (size_t i = 0; i < shownNames; ++i)
+		else
 		{
-			if (!secondLine.empty())
-				secondLine += ", ";
-			secondLine += status.items[i].name;
+			for (const RedfetchUpdateItem& item : status.items)
+				currentKeys.insert(fmt::format("{}:{}", item.resourceId, item.availableVersionId));
+
+			action = RedfetchNotificationHandler::Action::Update;
+			actionLabel = "Update now";
+
+			const size_t count = status.items.size();
+			firstLine = fmt::format("{} update{} available", count, count == 1 ? "" : "s");
+
+			// Keep toast short with "+N more"
+			constexpr size_t maxNames = 2;
+			const size_t shownNames = (std::min)(maxNames, count);
+			for (size_t i = 0; i < shownNames; ++i)
+			{
+				if (!secondLine.empty())
+					secondLine += ", ";
+				secondLine += RedfetchItemLabel(status.items[i]);
+			}
+			if (count > shownNames)
+				secondLine += fmt::format(", +{} more", count - shownNames);
 		}
-		if (count > shownNames)
-			secondLine += fmt::format(", +{} more", count - shownNames);
 	}
 	else if (status.authState == "needs_login")
 	{
@@ -1938,7 +2022,8 @@ static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::strin
 	WinToastTemplate templ(WinToastTemplate::Text02);
 	templ.setFirstLine(firstLine);
 	templ.setSecondLine(secondLine);
-	templ.addAction(actionLabel);
+	if (!actionLabel.empty())
+		templ.addAction(actionLabel);
 
 	// Record the notification only once it displays
 	if (WinToast::instance()->showToast(templ, handler) < 0)
@@ -1950,6 +2035,9 @@ static void ProcessRedfetchStatus(const RedfetchStatus& status, const std::strin
 
 struct RedfetchCheckResult
 {
+	enum class Origin { Check, Update };
+
+	Origin origin = Origin::Check;
 	std::string env;
 	std::chrono::system_clock::time_point spawnStart;
 	std::optional<RedfetchStatus> status;
@@ -1978,7 +2066,8 @@ static void RunRedfetchCheck(fs::path redfetchPath, std::string env,
 	}
 	else
 	{
-		constexpr DWORD checkTimeoutMs = 30000;
+		// pyapp updates can take a while.
+		constexpr DWORD checkTimeoutMs = 180000;
 		const DWORD waitResult = WaitForSingleObject(pi.hProcess, checkTimeoutMs);
 		if (waitResult == WAIT_OBJECT_0)
 		{
@@ -1993,8 +2082,8 @@ static void RunRedfetchCheck(fs::path redfetchPath, std::string env,
 		}
 		else if (waitResult == WAIT_TIMEOUT)
 		{
-			SPDLOG_WARN("redfetch check timed out after 30s; terminating");
-			TerminateProcess(pi.hProcess, 1);
+			// Don't TerminateProcess
+			SPDLOG_WARN("redfetch check still running after {}s; abandoning wait", checkTimeoutMs / 1000);
 		}
 		else
 		{
@@ -2009,7 +2098,93 @@ static void RunRedfetchCheck(fs::path redfetchPath, std::string env,
 		SPDLOG_DEBUG("Failed to post redfetch check result; dropping");
 }
 
-// Launch-only: reuse a recent cached update status or spawn redfetch
+// Detached worker thread with results via WM_USER_REDFETCH_CHECK.
+static void RunRedfetchUpdate(fs::path redfetchPath, RedfetchStatus preSpawnStatus, std::string env,
+	std::chrono::system_clock::time_point spawnStart)
+{
+	auto result = std::make_unique<RedfetchCheckResult>();
+	result->origin = RedfetchCheckResult::Origin::Update;
+	result->env = std::move(env);
+	result->spawnStart = spawnStart;
+
+	std::wstring cmdLine = L"\"" + redfetchPath.wstring() + L"\" update --headless --server "
+		+ mq::utf8_to_wstring(result->env);
+
+	STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+	si.dwFlags = STARTF_USESHOWWINDOW;
+	si.wShowWindow = SW_HIDE;
+
+	wil::unique_process_information pi;
+	if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+		CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi))
+	{
+		SPDLOG_WARN("Failed to spawn redfetch update: error {}", ::GetLastError());
+		result->status = std::move(preSpawnStatus);
+	}
+	else
+	{
+		constexpr DWORD updateTimeoutMs = 10 * 60 * 1000;
+		const DWORD waitResult = WaitForSingleObject(pi.hProcess, updateTimeoutMs);
+		if (waitResult == WAIT_OBJECT_0)
+		{
+			DWORD exitCode = 1;
+			GetExitCodeProcess(pi.hProcess, &exitCode);
+
+			if (exitCode == 0)
+			{
+				// exit 0 = ran and wrote status.
+				std::optional<RedfetchStatus> post = ReadRedfetchUpdateStatus();
+				constexpr auto freshnessGrace = std::chrono::seconds(2);
+				if (post && mq::ci_equals(post->env, result->env)
+					&& post->checkedAt && *post->checkedAt >= spawnStart - freshnessGrace)
+				{
+					result->status = std::move(post);
+				}
+				else
+				{
+					SPDLOG_DEBUG("redfetch update exited 0 but left no usable status; reconciling at next launch");
+				}
+			}
+			else
+			{
+				// busy, declined, or failed, the next launch tries again
+				SPDLOG_DEBUG("redfetch update exited with code {}; staying silent", exitCode);
+			}
+		}
+		else if (waitResult == WAIT_TIMEOUT)
+		{
+			SPDLOG_WARN("redfetch update still running after {} minutes; abandoning wait", updateTimeoutMs / 60000);
+		}
+		else
+		{
+			SPDLOG_WARN("redfetch update wait failed: error {}", ::GetLastError());
+		}
+	}
+
+	// Hand off to the main thread
+	if (PostMessageA(hMainWnd, WM_USER_REDFETCH_CHECK, reinterpret_cast<WPARAM>(result.get()), 0))
+		result.release();
+	else
+		SPDLOG_DEBUG("Failed to post redfetch update result; dropping");
+}
+
+static bool StartRedfetchUpdate(const RedfetchStatus& status, const std::string& env)
+{
+	const fs::path redfetchPath = ResolveRedfetchCommand();
+	if (redfetchPath.empty())
+	{
+		SPDLOG_WARN("redfetch auto-update skipped: redfetch could not be resolved");
+		return false;
+	}
+
+	s_redfetchUpdateStarted = true;
+
+	const size_t count = status.items.size();
+	SPDLOG_INFO("Spawning hidden redfetch update for env {} ({} update{})", env, count, count == 1 ? "" : "s");
+	std::thread(RunRedfetchUpdate, redfetchPath, status, env, std::chrono::system_clock::now()).detach();
+	return true;
+}
+
 static void StartRedfetchCheck()
 {
 	if (mq::GetPrivateProfileBool("MacroQuest", "DisableRedfetchCheck", false, internal_paths::MQini))
@@ -2026,44 +2201,17 @@ static void StartRedfetchCheck()
 	if (redfetchPath.empty())
 		return; // feature inactive without redfetch
 
-	constexpr int defaultIntervalMinutes = 30;
-	const int intervalMinutes = mq::GetPrivateProfileInt("MacroQuest", "RedfetchCheckIntervalMinutes", defaultIntervalMinutes, internal_paths::MQini);
-	const auto interval = std::chrono::minutes((std::max)(intervalMinutes, 0));
-	const auto now = std::chrono::system_clock::now();
-
-	// Fresh cached status
-	const std::optional<RedfetchStatus> cached = ReadRedfetchUpdateStatus();
-	if (cached && cached->checkedAt && mq::ci_equals(cached->env, env)
-		&& now - *cached->checkedAt < interval)
+	// Don't spawn checks for an install redfetch doesn't manage.
+	const std::optional<RedfetchStatus> lastStatus = ReadRedfetchUpdateStatus();
+	if (lastStatus && mq::ci_equals(lastStatus->env, env)
+		&& !RedfetchManagesThisInstall(lastStatus->managedPath))
 	{
-		SPDLOG_DEBUG("Using cached redfetch update status (checked within interval)");
-		ProcessRedfetchStatus(*cached, env);
+		SPDLOG_DEBUG("redfetch manages '{}', not this install '{}'", lastStatus->managedPath, internal_paths::MQRoot);
 		return;
 	}
-
-	if (cached && mq::ci_equals(cached->env, env)
-		&& !RedfetchManagesThisInstall(cached->managedPath))
-	{
-		SPDLOG_DEBUG("redfetch manages '{}', not this install '{}'", cached->managedPath, internal_paths::MQRoot);
-		return;
-	}
-
-	nlohmann::json state = ReadRedfetchCheckState();
-	const std::optional<std::chrono::system_clock::time_point> lastSpawn = GetRedfetchLastSpawn(state, env);
-	if (lastSpawn)
-	{
-		if (now - *lastSpawn < interval)
-		{
-			SPDLOG_DEBUG("redfetch check spawn rate-limited (last attempt within interval)");
-			return;
-		}
-	}
-
-	state["envs"][env]["last_spawn"] = static_cast<int64_t>(std::chrono::system_clock::to_time_t(now));
-	WriteRedfetchCheckState(state);
 
 	SPDLOG_DEBUG("Spawning redfetch check for env {}", env);
-	std::thread(RunRedfetchCheck, redfetchPath, env, now).detach();
+	std::thread(RunRedfetchCheck, redfetchPath, env, std::chrono::system_clock::now()).detach();
 }
 
 static void HandleRedfetchCheckResult(uintptr_t resultPtr)
@@ -2071,6 +2219,12 @@ static void HandleRedfetchCheckResult(uintptr_t resultPtr)
 	const std::unique_ptr<RedfetchCheckResult> result(reinterpret_cast<RedfetchCheckResult*>(resultPtr));
 	if (!result || !result->status)
 		return; // spawn failed, timed out, or wrote nothing fresh
+
+	if (result->origin == RedfetchCheckResult::Origin::Update)
+	{
+		ProcessRedfetchStatus(*result->status, result->env, false);
+		return;
+	}
 
 	// Require checked_at to advance
 	constexpr auto freshnessGrace = std::chrono::seconds(2);
@@ -2081,7 +2235,7 @@ static void HandleRedfetchCheckResult(uintptr_t resultPtr)
 		return;
 	}
 
-	ProcessRedfetchStatus(*result->status, result->env);
+	ProcessRedfetchStatus(*result->status, result->env, true);
 }
 
 #pragma endregion
