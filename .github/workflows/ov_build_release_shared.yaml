@@ -599,7 +599,7 @@ jobs:
         shell: pwsh
         run: echo "MQVERSION_INFO=$((Get-Item build/bin/release/MQ2Main.dll).VersionInfo.FileVersion)" >> $env:GITHUB_ENV
 
-      # Previous release CHANGELOG.md is our durable snapshot; must run before the release assets are clobbered.
+      # Previous release CHANGELOG.md is our snapshot
       - name: "[Release] Fetch changelog from previous release"
         shell: pwsh
         env:
@@ -642,7 +642,6 @@ jobs:
           Remove-Item -Force "${{ github.workspace }}/build/ReleaseNotes.md" -ErrorAction SilentlyContinue
           $ReleaseDescription | Out-File "${{ github.workspace }}/build/ReleaseNotes.md"
 
-      # softprops won't re-point an existing tag
       - name: "[Release] Move rolling tag to built commit"
         shell: pwsh
         env:
@@ -653,19 +652,23 @@ jobs:
           git push -f "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/redguides/openvanilla" "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      # CHANGELOG.md rides along as the next run's diff baseline.
-      - name: "[Release] Publish GitHub release (rolling, in place)"
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: vv-${{ inputs.client_target }}
-          target_commitish: ${{ github.sha }}
-          name: MacroQuest (${{ inputs.client_target }}) v${{ env.MQVERSION_INFO }}
-          body_path: ${{ github.workspace }}/build/ReleaseNotes.md
-          make_latest: ${{ env.vv_enabled }}
-          prerelease: ${{ env.vv_enabled == 'false' }}
-          files: |
-            build/bin/MacroQuest.zip
-            data/resources/CHANGELOG.md
+      - name: "[Release] Remove Release 'vv-${{ inputs.client_target }}'"
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $output = gh release delete vv-${{ inputs.client_target }} --yes 2>&1
+          if (!$? -And -Not($output -like "*release not found*")) {
+            throw $output
+          }
+          exit 0
+
+      - name: "[Release] Create Release for ${{ inputs.client_target }}"
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create vv-${{ inputs.client_target }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" $(if ($${{ env.vv_enabled == 'true' }}) {"--latest"} else {"--prerelease"}) build/bin/MacroQuest.zip data/resources/CHANGELOG.md
 
       - name: "[Release] Publish to RedGuides"
         if: env.vv_enabled == 'true'
