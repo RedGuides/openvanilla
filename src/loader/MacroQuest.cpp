@@ -1490,7 +1490,7 @@ static void LaunchRedfetch(bool isUpdate = false)
 		args = L"update";
 		const std::string env = GetRedfetchEnv();
 		if (!env.empty())
-			args += L" --server " + mq::utf8_to_wstring(env);
+			args += L" --client " + mq::utf8_to_wstring(env);
 	}
 
 	ShellExecuteW(nullptr, L"open", redfetchPath.wstring().c_str(),
@@ -2051,8 +2051,8 @@ static void RunRedfetchCheck(fs::path redfetchPath, std::string env,
 	result->env = std::move(env);
 	result->spawnStart = spawnStart;
 
-	// MQ passes only --server; redfetch owns which targets are outdated.
-	std::wstring cmdLine = L"\"" + redfetchPath.wstring() + L"\" check --server " + mq::utf8_to_wstring(result->env);
+	// MQ passes only --client; redfetch owns which targets are outdated.
+	std::wstring cmdLine = L"\"" + redfetchPath.wstring() + L"\" check --client " + mq::utf8_to_wstring(result->env);
 
 	STARTUPINFOW si = { sizeof(STARTUPINFOW) };
 	si.dwFlags = STARTF_USESHOWWINDOW;
@@ -2107,7 +2107,7 @@ static void RunRedfetchUpdate(fs::path redfetchPath, RedfetchStatus preSpawnStat
 	result->env = std::move(env);
 	result->spawnStart = spawnStart;
 
-	std::wstring cmdLine = L"\"" + redfetchPath.wstring() + L"\" update --headless --server "
+	std::wstring cmdLine = L"\"" + redfetchPath.wstring() + L"\" update --headless --client "
 		+ mq::utf8_to_wstring(result->env);
 
 	STARTUPINFOW si = { sizeof(STARTUPINFOW) };
