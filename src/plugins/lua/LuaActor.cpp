@@ -284,9 +284,7 @@ public:
 private:
 	std::string m_name;
 	sol::function m_callback;
-	sol::thread m_thread;
 	sol::thread m_parentThread;
-	sol::coroutine m_coroutine;
 	std::vector<std::unique_ptr<CallbackInstance>> m_queue;
 
 	DropboxAPI m_dropbox;
@@ -356,8 +354,6 @@ LuaDropbox::LuaDropbox(std::string_view name, const sol::function& callback, con
 	, m_parentThread(parent_thread)
 	, m_dropbox(AddActor(m_name.c_str(), [this](const std::shared_ptr<Message>& message) { Receive(message); }))
 {
-	m_thread = sol::thread::create(parent_thread.state());
-	m_coroutine = sol::coroutine(m_thread.state(), m_callback);
 }
 
 LuaDropbox::~LuaDropbox()
@@ -455,18 +451,21 @@ void LuaDropbox::Reply(const std::shared_ptr<Message>& message, const sol::objec
 
 void LuaDropbox::Receive(const std::shared_ptr<Message>& message)
 {
+	sol::thread thread = sol::thread::create(m_parentThread.state());
+	sol::coroutine coroutine(thread.state(), m_callback);
+
 	try
 	{
-		ScopedYieldDisabler disableYield(LuaThread::get_from(m_thread.state()));
+		ScopedYieldDisabler disableYield(LuaThread::get_from(thread.state()));
 
-		sol::function_result result = m_coroutine(LuaMessage(this, message));
+		sol::function_result result = coroutine(LuaMessage(this, message));
 		if (!result.valid())
 		{
 			LuaError("Lua Actor Failure:\n%s", sol::stack::get<std::string>(result.lua_state(), result.stack_index()).c_str());
 			result.abandon();
 		}
 	}
-	catch (std::runtime_error& e)
+	catch (const std::exception& e)
 	{
 		LuaError("Lua Actor Failure:\n%s", e.what());
 	}
@@ -476,7 +475,7 @@ void LuaDropbox::Process()
 {
 	// remove any existing hooks, they will be re-installed when running in onpulse
 	// this is to help prevent us from yielding from the thread while we're running imgui stuff.
-	if (auto thread = LuaThread::get_from(m_thread.state()))
+	if (auto thread = LuaThread::get_from(m_parentThread.state()))
 		lua_sethook(thread->GetLuaThread().lua_state(), nullptr, 0, 0);
 
 	for (auto& callback : m_queue)

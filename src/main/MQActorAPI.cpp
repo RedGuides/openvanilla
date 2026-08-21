@@ -22,6 +22,8 @@
 
 #include "MQ2Main.h"
 
+#include "spdlog/spdlog.h"
+
 namespace mq {
 using namespace postoffice;
 
@@ -53,7 +55,8 @@ MQActorAPI* pActorAPI = nullptr;
 std::unordered_map<MQPlugin*, std::vector<std::unique_ptr<postoffice::Dropbox>>> s_dropboxes;
 
 // this is to allow for replies while not exposing message internals to the API
-std::map<proto::routing::Envelope*, std::unique_ptr<proto::routing::Envelope>> s_messageStorage;
+uint64_t s_nextMessageStorageId = 1;
+std::map<uint64_t, std::unique_ptr<proto::routing::Envelope>> s_messageStorage;
 
 static void OnPostUnloadPluginActorAPI(const char* pluginName)
 {
@@ -184,14 +187,27 @@ void MQActorAPI::ReplyToActor(
 	uint8_t status,
 	const MQPluginHandle& pluginHandle)
 {
-	if (dropbox != nullptr && dropbox->IsValid())
+	if (dropbox == nullptr)
 	{
-		auto message_ptr = s_messageStorage.find(message->Original);
+		SPDLOG_WARN("MQActorAPI::ReplyToActor: dropbox is null, reply silently dropped. StorageId={}", message->StorageId);
+	}
+	else if (!dropbox->IsValid())
+	{
+		SPDLOG_WARN("MQActorAPI::ReplyToActor: dropbox is not valid (removed?), reply silently dropped. StorageId={}", message->StorageId);
+	}
+	else
+	{
+		auto message_ptr = s_messageStorage.find(message->StorageId);
 		if (message_ptr != s_messageStorage.end())
 		{
 			// we don't want to do any address mangling here because a reply is always going to be fully qualified
 			dropbox->PostReply(std::move(message_ptr->second), data, status);
 			s_messageStorage.erase(message_ptr);
+		}
+		else
+		{
+			SPDLOG_WARN("MQActorAPI::ReplyToActor: StorageId={} not found in s_messageStorage (size={}), reply silently dropped",
+				message->StorageId, s_messageStorage.size());
 		}
 	}
 
@@ -231,13 +247,14 @@ postoffice::Dropbox* MQActorAPI::AddActor(
 				data = message->payload();
 
 			auto message_ptr = message.get();
-			s_messageStorage.emplace(message_ptr, std::move(message));
+			const uint64_t storageId = s_nextMessageStorageId++;
+			s_messageStorage.emplace(storageId, std::move(message));
 
 			receive(std::shared_ptr<postoffice::Message>(
-				new postoffice::Message{ message_ptr, sender, data },
-				[](postoffice::Message* message)
+				new postoffice::Message{ message_ptr, sender, data, storageId },
+				[storageId](postoffice::Message* message)
 				{
-					s_messageStorage.erase(message->Original);
+					s_messageStorage.erase(storageId);
 					delete message;
 				}));
 		}));

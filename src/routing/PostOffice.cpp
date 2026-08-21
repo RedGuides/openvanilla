@@ -243,7 +243,7 @@ Dropbox PostOffice::RegisterAddress(const std::string& localAddress, ReceiveCall
 				m_id.BuildAddress(ret);
 				ret.set_mailbox(localAddress);
 
-				SPDLOG_TRACE("Dropbox {{{}}}}: posting message to address {} seq={}",
+				SPDLOG_TRACE("Dropbox {{{}}}: posting message to address {} seq={}",
 					m_id, message->address().ShortDebugString(), message->sequence());
 
 				if (callback != nullptr)

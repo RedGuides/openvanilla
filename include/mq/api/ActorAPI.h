@@ -100,6 +100,8 @@ public:
 
 	/** The data of the message to be parsed by the message handler */
 	std::optional<std::string> Payload;
+
+	uint64_t StorageId = 0;
 };
 
 using ReceiveCallbackAPI = std::function<void(const std::shared_ptr<Message>&)>;
