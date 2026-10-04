@@ -1,0 +1,9 @@
+LIBRARY MQ2Main
+EXPORTS
+    AddRenderCallbacks
+    RemoveRenderCallbacks
+    WriteChatf
+    GetGameState
+    gpD3D9Device DATA
+    gbDeviceAcquired DATA
+    gPathMQRoot DATA
