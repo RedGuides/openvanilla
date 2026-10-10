@@ -26,6 +26,11 @@ PreSetup("MQ2Bzsrch");
 class MQ2BazaarType;
 class MQ2BazaarItemType;
 
+// 08-19-2026 added expansion to dropdown
+#define HAS_EXPANSION_DROPDOWN IS_CLIENT_DATE(20260819)
+// 09-17-2026 added MinStat and MaxStat to input
+#define HAS_STATMINMAX_INPUT IS_CLIENT_DATE(20260917)
+
 struct
 {
 	const char* name;
@@ -499,7 +504,7 @@ void MQ2BzSrch(SPAWNINFO* pChar, char* szLine)
 	WriteChatColor("params:", USERCOLOR_WHO);
 	WriteChatColor("    [trader any value you see in that box or an index, remember to enclose values with spaces in them with quotes like: \"some value\"]", USERCOLOR_WHO);
 	WriteChatColor("    [race any|barbarian|dark elf|dwarf|erudite|froglok|gnome|half elf|halfling|high elf|human|iksar|ogre|troll|vah shir|wood elf|drakkin]", USERCOLOR_WHO);
-	WriteChatColor("    [class any|bard|beastlord|berserkers|cleric|druid|enchanter|magician|monk|necromancer|paladin|ranger|rogue|shadow knight|shaman|warrior|wizard]", USERCOLOR_WHO);
+	WriteChatColor("    [class any|bard|beastlord|berserker|cleric|druid|enchanter|magician|monk|necromancer|paladin|ranger|rogue|shadow knight|shaman|warrior|wizard]", USERCOLOR_WHO);
 	WriteChatColor("    [stat any value you see in that box or an index, remember to enclose values with spaces in them with quotes like: \"some value\"]", USERCOLOR_WHO);
 	WriteChatColor("    [slot  any value you see in that box or an index, remember to enclose values with spaces in them with quotes like: \"some value\"]", USERCOLOR_WHO);
 	WriteChatColor("    [type  any value you see in that box or an index, remember to enclose values with spaces in them with quotes like: \"some value\"]", USERCOLOR_WHO);
@@ -507,6 +512,12 @@ void MQ2BzSrch(SPAWNINFO* pChar, char* szLine)
 	WriteChatColor("    [prestige any value you see in that box or an index, remember to enclose values with spaces in them with quotes like: \"some value\"]", USERCOLOR_WHO);
 	WriteChatColor("    [augment any value you see in that box or an index, remember to enclose values with spaces in them with quotes like: \"some value\"]", USERCOLOR_WHO);
 	WriteChatColor("", USERCOLOR_WHO);
+#if HAS_EXPANSION_DROPDOWN
+	WriteChatColor("    [expansion any value you see in that box or an index, remember to enclose values with spaces in them with quotes like: \"some value\"]", USERCOLOR_WHO);
+#endif
+#if HAS_STATMINMAX_INPUT
+	WriteChatColor("    [statvalue <low> <high>]", USERCOLOR_WHO);
+#endif
 	WriteChatColor("Results are available through the Bazaar TLO:", USERCOLOR_WHO);
 	WriteChatColor("    ${Bazaar} -- TRUE if there are search results", USERCOLOR_WHO);
 	WriteChatColor("    ${Bazaar.Count} -- number of search results", USERCOLOR_WHO);
@@ -691,7 +702,7 @@ void DoCombo(CComboWnd* pCombo, const char* szArg, const char* key)
 
 	if (pCombo)
 	{
-		if (index != -1 && index <= pCombo->GetItemCount())
+		if (index != -1 && index < pCombo->GetItemCount())
 		{
 			SetComboSelection(pCombo, index);
 		}
@@ -835,6 +846,44 @@ void BzSrchMe(SPAWNINFO* pChar, char* szLine)
 			szLine = GetNextArg(szLine, 1);
 			DoCombo(pBazaarSearchWnd->pItemAugmentCombobox, szArg, "Augment");
 		}
+#if HAS_EXPANSION_DROPDOWN
+		else if (ci_equals(szArg, "expansion"))
+		{
+			GetArg(szArg, szLine, 1);
+			szLine = GetNextArg(szLine, 1);
+			DoCombo(pBazaarSearchWnd->pItemExpansionCombobox, szArg, "Expansion");
+		}
+#endif
+#if HAS_STATMINMAX_INPUT
+		else if (ci_equals(szArg, "statvalue"))
+		{
+			GetArg(szArg, szLine, 1);
+			szLine = GetNextArg(szLine, 1);
+			if (szArg[0] == '\0')
+			{
+				MacroError("Bad stat value low.");
+				return;
+			}
+
+			if (CEditWnd* pEdit = pBazaarSearchWnd->pMinStatInput)
+			{
+				pEdit->SetWindowText(szArg);
+			}
+
+			GetArg(szArg, szLine, 1);
+			szLine = GetNextArg(szLine, 1);
+			if (szArg[0] == '\0')
+			{
+				MacroError("Bad state value high.");
+				return;
+			}
+
+			if (CEditWnd* pEdit = pBazaarSearchWnd->pMaxStatInput)
+			{
+				pEdit->SetWindowText(szArg);
+			}
+		}
+#endif
 		else
 		{
 			if (first)
