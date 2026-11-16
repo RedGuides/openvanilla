@@ -6,6 +6,9 @@ on:
       client_target:
         required: true
         type: string
+      headline:
+        required: false
+        type: string
 
 env:
   platform: "${{ contains(inputs.client_target, 'rof2') && 'Win32' || 'x64' }}"
@@ -599,48 +602,40 @@ jobs:
         shell: pwsh
         run: echo "MQVERSION_INFO=$((Get-Item build/bin/release/MQ2Main.dll).VersionInfo.FileVersion)" >> $env:GITHUB_ENV
 
-      # Previous release CHANGELOG.md is our snapshot
-      - name: "[Release] Fetch changelog from previous release"
+      # Previous release CHANGELOG.md and build-manifest.json are our snapshots
+      - name: "[Release] Fetch snapshots from previous release"
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $dir = "${{ github.workspace }}/build/changelog"
+          $dir = "${{ github.workspace }}/build/previous"
           New-Item -Path $dir -ItemType Directory -Force | Out-Null
-          gh release download "vv-${{ inputs.client_target }}" --pattern CHANGELOG.md --dir $dir
+          gh release download "vv-${{ inputs.client_target }}" --pattern CHANGELOG.md --pattern build-manifest.json --dir $dir
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "No CHANGELOG.md asset on the previous 'vv-${{ inputs.client_target }}' release; this run will use the default release notes."
+            Write-Host "No snapshots on the previous 'vv-${{ inputs.client_target }}' release; this run will use the default release notes."
           }
           exit 0
 
-      - name: "[Release] Diff Changelog"
-        id: diff_changelog
+      - name: "[Release] Write release notes"
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEADLINE: ${{ inputs.headline }}
         run: |
-          $ReleaseDescription = "Automated release for ${{ inputs.client_target }}"
-          $newPath = "${{ github.workspace }}/data/resources/CHANGELOG.md"
-          $oldPath = "${{ github.workspace }}/build/changelog/CHANGELOG.md"
+          $script = "${{ github.workspace }}/tools/build_scripts/Get-ReleaseNotes.ps1"
+          & $script -Mode Manifest | Out-File "${{ github.workspace }}/build/build-manifest.json"
 
-          if (Test-Path $oldPath) {
-            $oldHeadings = New-Object System.Collections.Generic.HashSet[string]
-            Get-Content $oldPath | Where-Object { $_ -match '^##\s' } | ForEach-Object { [void]$oldHeadings.Add($_.Trim()) }
-
-            $newLines = [System.Collections.Generic.List[string]]::new()
-            foreach ($line in (Get-Content $newPath)) {
-              if ($line -match '^##\s' -and $oldHeadings.Contains($line.Trim())) { break }
-              $newLines.Add($line)
-            }
-            $newContent = ($newLines -join "`r`n").Trim()
-            if ($newContent) {
-              $ReleaseDescription = $newContent
-              Write-Host "Found new changelog content:`n$newContent"
-            } else {
-              Write-Host "Changelog unchanged since last release; using default release notes."
-            }
+          # Notes never fail a release; anything that goes wrong falls back to the default.
+          $notes = try {
+            & $script -Mode Notes -Previous "${{ github.workspace }}/build/previous" -Headline $env:HEADLINE
+          } catch {
+            Write-Warning "Release notes failed: $_"
           }
+          if (-not $notes) { $notes = "Automated release for ${{ inputs.client_target }}" }
 
-          Remove-Item -Force "${{ github.workspace }}/build/ReleaseNotes.md" -ErrorAction SilentlyContinue
-          $ReleaseDescription | Out-File "${{ github.workspace }}/build/ReleaseNotes.md"
+          Write-Host "Release notes:`n$notes"
+          $notes | Out-File "${{ github.workspace }}/build/ReleaseNotes.md"
+          exit 0
 
       - name: "[Release] Move rolling tag to built commit"
         shell: pwsh
@@ -668,7 +663,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create vv-${{ inputs.client_target }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" $(if ($${{ env.vv_enabled == 'true' }}) {"--latest"} else {"--prerelease"}) build/bin/MacroQuest.zip data/resources/CHANGELOG.md
+          gh release create vv-${{ inputs.client_target }} --title "MacroQuest (${{ inputs.client_target }}) v$($env:MQVERSION_INFO)" --notes-file "${{ github.workspace }}/build/ReleaseNotes.md" $(if ($${{ env.vv_enabled == 'true' }}) {"--latest"} else {"--prerelease"}) build/bin/MacroQuest.zip data/resources/CHANGELOG.md build/build-manifest.json
 
       - name: "[Release] Publish to RedGuides"
         if: env.vv_enabled == 'true'

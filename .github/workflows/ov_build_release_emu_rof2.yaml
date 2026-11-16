@@ -2,6 +2,11 @@ name: OV Build MacroQuest Emu RoF2 Release
 
 on:
   workflow_dispatch:
+    inputs:
+      headline:
+        description: First line of the release notes (optional)
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}
@@ -12,4 +17,5 @@ jobs:
     uses: ./.github/workflows/ov_build_release_shared.yaml
     with:
       client_target: emu-rof2
+      headline: ${{ inputs.headline }}
     secrets: inherit
